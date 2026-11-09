@@ -184,7 +184,7 @@ def test_owned_lively_copy_receives_new_viewer_and_scene(tmp_path, monkeypatch):
     for name in ('index.html', 'viewer.js', 'scene-data.js'):
         (imported / name).write_bytes((output / name).read_bytes())
     (imported / 'viewer.js').write_text(
-        (imported / 'viewer.js').read_text(encoding='utf-8') + '\\n// stale viewer')
+        (imported / 'viewer.js').read_text(encoding='utf-8') + '\\n// stale viewer', encoding='utf-8')
     (imported / 'scene-data.js').write_text('stale scene')
     config['lively_project'] = str(imported)
     assert app.sync_lively_project(config)
