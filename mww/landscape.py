@@ -1,9 +1,8 @@
-"""Small, optional saved-world heightfield layer for distant scenery.
+"""Read a bounded, low-detail surface from real saved Minecraft block columns.
 
-The near/base mesher owns detailed blocks. This adapter reads Minecraft chunk
-Heightmaps and samples a bounded coarse grid; the viewer consumes versioned
-surface records. No invented terrain, Minecraft runtime, or third-party packages.
-Missing chunks remain missing.
+The near renderer owns detailed blocks. This independent adapter samples only
+a small set of columns per chunk, without trusting version-dependent chunk
+heightmap origins, inventing missing terrain, or loading another engine.
 """
 from __future__ import annotations
 
@@ -15,75 +14,65 @@ from pathlib import Path
 
 from .nbt import RegionReader, block_name, unpack_palette
 
-SAMPLE = struct.Struct('<hBBB')  # Y relative to scene centre, RGB; -32768 = missing
+SAMPLE = struct.Struct('<hBBB')  # local Y, RGB; Y=-32768 means missing
 MISSING = -32768
 
 
-def _surface_heights(chunk):
-    """Read 256 packed Java heightmap entries (z-major), or return None."""
-    root = chunk.get('Level', chunk)
-    heightmaps = root.get('Heightmaps') or root.get('heightmaps') or {}
-    values = (heightmaps.get('WORLD_SURFACE') or heightmaps.get('MOTION_BLOCKING')
-              or heightmaps.get('MOTION_BLOCKING_NO_LEAVES'))
-    if not isinstance(values, list) or not values:
-        return None
-    sections = root.get('sections') or root.get('Sections') or []
-    if not sections:
-        return None
-    # Minecraft heightmaps encode their elevation relative to chunk.yPos,
-    # NOT the lowest block section that happened to be serialised. Newer
-    # formats can omit empty sections, including sections below the terrain.
-    # Infer packed width from the actual long count rather than from sections.
-    section_ys = [int(s.get('Y', 0)) for s in sections]
-    y_pos = root.get('yPos', root.get('YPos'))
-    min_y = (int(y_pos) if y_pos is not None else min(section_ys)) * 16
-    widths = [width for width in range(1, 17)
-              if math.ceil(256 / (64 // width)) == len(values)]
-    if len(widths) != 1:
-        return None
-    bits = widths[0]
-    per_long = 64 // bits
-    mask = (1 << bits) - 1
-    result = []
-    for k in range(256):
-        value = (int(values[k // per_long]) & 0xFFFFFFFFFFFFFFFF) >> ((k % per_long) * bits)
-        height = value & mask
-        result.append(min_y + height - 1 if height else None)
-    return result
+def _is_air(name: str) -> bool:
+    return name in ('minecraft:air', 'minecraft:cave_air', 'minecraft:void_air')
 
 
-def _top_block(chunk, lx, y, lz):
-    """Sample one actual block name at the indicated surface height."""
+def surface_columns(chunk: dict, columns) -> dict:
+    """Find the true highest non-air block for each sampled local X/Z column.
+
+    Sections are processed from top to bottom. Packed 4096-state arrays are
+    decoded once PER SECTION, not once for each column. This works for modern
+    26.x palettes, non-standard dimension heights and omitted empty sections,
+    because it never infers Y from a heightmap's compressed origin.
+    """
     root = chunk.get('Level', chunk)
     sections = root.get('sections') or root.get('Sections') or []
-    target = y // 16
-    for section in sections:
-        if int(section.get('Y', 0)) != target:
-            continue
+    pending = set(columns)
+    found = {}
+    version = int(chunk.get('DataVersion', root.get('DataVersion', 3000)))
+    for section in sorted(sections, key=lambda s: int(s.get('Y', 0)), reverse=True):
+        if not pending:
+            break
+        sy = int(section.get('Y', 0))
         states = section.get('block_states') or section
         palette = states.get('palette') or states.get('Palette') or []
         if not palette:
-            return None
-        try:
-            if len(palette) == 1:
-                state = palette[0]
-            else:
-                data = states.get('data') or states.get('BlockStates') or []
-                idx = (y % 16) * 256 + lz * 16 + lx
-                indices = unpack_palette(data, len(palette), int(chunk.get('DataVersion', 3000)))
-                state = palette[indices[idx]]
-            return block_name(state)
-        except (ValueError, IndexError, TypeError, KeyError):
-            return None
-    return None
+            continue
+        names = [block_name(state) for state in palette]
+        if len(names) == 1:
+            name = names[0]
+            if not _is_air(name):
+                for column in pending:
+                    found[column] = (sy * 16 + 15, name)
+                pending.clear()
+            continue
+
+        indexes = unpack_palette(states.get('data') or states.get('BlockStates') or [],
+                                 len(palette), version)
+        for lx, lz in tuple(pending):
+            base = lz * 16 + lx
+            for ly in range(15, -1, -1):
+                name = names[indexes[ly * 256 + base]]
+                if not _is_air(name):
+                    found[(lx, lz)] = (sy * 16 + ly, name)
+                    pending.remove((lx, lz))
+                    break
+    return found
 
 
-def build_landscape(dim: Path, centre, near_radius: int, radius: int = 128, step: int = 8, color_for=None):
-    """Return a compact optional terrain layer in local coordinates."""
+def build_landscape(dim: Path, centre, near_radius: int, radius: int = 128,
+                    step: int = 8, color_for=None):
+    """Return a compact optional terrain layer, derived from real saved blocks."""
     if radius <= 0:
         return None
     if radius < near_radius + step or radius > 192 or step not in (4, 8, 16):
         raise ValueError('Surroundings radius/step is outside supported bounds')
+
     side = 2 * math.ceil(radius / step) + 1
     half = side // 2
     x0, z0 = int(centre[0]) - half * step, int(centre[2]) - half * step
@@ -96,40 +85,46 @@ def build_landscape(dim: Path, centre, near_radius: int, radius: int = 128, step
             if max(abs(x - centre[0]), abs(z - centre[2])) < near_radius - step:
                 continue
             by_chunk[(x // 16, z // 16)].append((iz * side + ix, x % 16, z % 16))
+
     present = 0
     with RegionReader(dim / 'region') as reader:
         for (cx, cz), positions in by_chunk.items():
             chunk = reader.chunk(cx, cz)
-            if not chunk:
+            if chunk is None:
                 continue
-            heights = _surface_heights(chunk)
-            if heights is None:
-                continue
-            for n, lx, lz in positions:
-                y = heights[lz * 16 + lx]
-                if y is None or not -32767 <= y - centre[1] <= 32767:
+            columns = surface_columns(chunk, {(lx, lz) for _, lx, lz in positions})
+            for index, lx, lz in positions:
+                top = columns.get((lx, lz))
+                if top is None:
                     continue
-                block = _top_block(chunk, lx, y, lz)
-                rgb = color_for(block) if block and color_for else (112, 149, 115)
-                samples[n] = SAMPLE.pack(int(y - centre[1]), *rgb)
+                y, block = top
+                relative_y = y - centre[1]
+                if not -32767 <= relative_y <= 32767:
+                    continue
+                rgb = color_for(block) if color_for else (112, 149, 115)
+                samples[index] = SAMPLE.pack(int(relative_y), *rgb)
                 present += 1
-    # Only hide the artificial outer cube walls if the entire ring
-    # connecting near blocks to this coarse surface is available.
-    joinable = True
-    for iz in range(side):
-        for ix in range(side):
-            dx = abs(x0 + ix * step - centre[0])
-            dz = abs(z0 + iz * step - centre[2])
-            edge = max(dx, dz)
-            if near_radius - step <= edge <= near_radius + step:
-                if SAMPLE.unpack(samples[iz * side + ix])[0] == MISSING:
-                    joinable = False
-                    break
-        if not joinable:
-            break
+
+    # Hide the crop-box walls only if the ring needed to join near and far
+    # is fully present in the saved chunks. Missing terrain remains missing.
+    joinable = present > 0
+    if joinable:
+        for iz in range(side):
+            for ix in range(side):
+                dx = abs(x0 + ix * step - centre[0])
+                dz = abs(z0 + iz * step - centre[2])
+                edge = max(dx, dz)
+                if near_radius - step <= edge <= near_radius + step:
+                    if SAMPLE.unpack(samples[iz * side + ix])[0] == MISSING:
+                        joinable = False
+                        break
+            if not joinable:
+                break
+
     return {
-        'joinable': joinable,
         'version': 1,
+        'source': 'saved-block-columns',
+        'joinable': joinable,
         'step': step,
         'radius': radius,
         'size': side,
