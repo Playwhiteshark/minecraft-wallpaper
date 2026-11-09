@@ -6,6 +6,7 @@ import json
 import math
 import os
 import struct
+import uuid
 import zipfile
 import zlib
 from pathlib import Path
@@ -14,7 +15,7 @@ import pytest
 
 import app
 from mww.nbt import RegionReader, WorldFormatError, level_info, parse_nbt, unpack_palette
-from mww.scene import build_scene, publish_scene, verify_scene_script
+from mww.scene import build_scene, publish_scene, verify_scene_script, dimension_directory
 
 
 def u16(value):return struct.pack('>H',value)
@@ -214,3 +215,75 @@ def test_level_dat_player_overrides_playerdata(tmp_path):
           ('SpawnX',3,0),('SpawnY',3,80),('SpawnZ',3,0)]
     (world/'level.dat').write_bytes(gzip.compress(root([('Data',10,data)])))
     assert level_info(world)['player']==[5,69,11]
+
+
+def test_minecraft_26_1_saved_player_and_full_refresh(tmp_path, monkeypatch):
+    """New storage: singleplayer_uuid -> players/data; chunk directories under dimensions."""
+    world, jar = make_world(tmp_path)
+    uid = uuid.UUID('12345678-1234-5678-abcd-1234567890ab')
+    signed = list(struct.unpack('>iiii', uid.bytes))
+    data = [('DataVersion', 3, 5000), ('LevelName', 8, 'New Format'),
+            ('SpawnX', 3, 0), ('SpawnY', 3, 80), ('SpawnZ', 3, 0),
+            ('singleplayer_uuid', 11, signed)]
+    (world / 'level.dat').write_bytes(gzip.compress(root([('Data', 10, data)])))
+    folder = world / 'players' / 'data'
+    folder.mkdir(parents=True)
+    (folder / (str(uid) + '.dat')).write_bytes(
+        gzip.compress(root([('Pos', 9, (6, [-421.6, 86.2, 123.4]))])))
+    dimension = world / 'dimensions' / 'minecraft' / 'overworld'
+    dimension.mkdir(parents=True)
+    (world / 'region').rename(dimension / 'region')
+    (world / 'entities').rename(dimension / 'entities')
+    info = level_info(world)
+    assert info['spawn'] == [0, 80, 0]
+    assert info['player'] == [-422, 86, 123]
+    assert info['player_source'] == 'players/data (singleplayer_uuid)'
+    assert dimension_directory(world, 'overworld') == dimension
+    monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'result'))
+    cfg = make_config(world, jar)
+    output = app.refresh(cfg, force=True)
+    assert output['status'] == 'rendered'
+    assert output['stats']['blocks'] > 100
+    assert output['stats']['animals'] == 5
+    assert app.refresh(cfg)['status'] == 'unchanged'
+
+
+def test_minecraft_26_1_uuid_selects_correct_player(tmp_path):
+    world = tmp_path / 'Two Players'
+    world.mkdir()
+    uid = uuid.UUID('ffffffff-0000-0000-0000-000000000001')
+    data = [('DataVersion', 3, 5000), ('singleplayer_uuid', 8, str(uid)),
+            ('SpawnX', 3, 0), ('SpawnY', 3, 80), ('SpawnZ', 3, 0)]
+    (world / 'level.dat').write_bytes(gzip.compress(root([('Data', 10, data)])))
+    folder = world / 'players' / 'data'
+    folder.mkdir(parents=True)
+    for name, pos in [(str(uid), [91., 72., 203.]),
+                      ('00000000-0000-0000-0000-000000000002', [2., 80., 3.])]:
+        (folder / (name + '.dat')).write_bytes(
+            gzip.compress(root([('Pos', 9, (6, pos))])))
+    info = level_info(world)
+    assert info['player'] == [91, 72, 203]
+    assert info['player_source'] == 'players/data (singleplayer_uuid)'
+
+
+def test_modern_nether_end_overworld_paths(tmp_path):
+    world = tmp_path / 'New Worlds'
+    for name in ('the_nether', 'the_end'):
+        (world / 'dimensions' / 'minecraft' / name / 'region').mkdir(parents=True)
+    assert dimension_directory(world, 'nether') == world / 'dimensions' / 'minecraft' / 'the_nether'
+    assert dimension_directory(world, 'end') == world / 'dimensions' / 'minecraft' / 'the_end'
+    assert dimension_directory(world, 'overworld') == world / 'dimensions' / 'minecraft' / 'overworld'
+
+
+def test_new_layout_unmatched_uuid_does_not_use_wrong_player(tmp_path):
+    world = tmp_path / 'Unmatched Player'
+    world.mkdir()
+    data = [('DataVersion', 3, 5000), ('singleplayer_uuid', 8, '12345678-1234-5678-abcd-1234567890ab')]
+    (world / 'level.dat').write_bytes(gzip.compress(root([('Data', 10, data)])))
+    folder = world / 'players' / 'data'
+    folder.mkdir(parents=True)
+    (folder / '00000000-0000-0000-0000-000000000001.dat').write_bytes(
+        gzip.compress(root([('Pos', 9, (6, [2., 81., 4.]))])))
+    info = level_info(world)
+    assert info['player'] is None
+    assert len(info['player_candidates']) == 1
