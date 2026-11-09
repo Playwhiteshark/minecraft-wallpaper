@@ -1,27 +1,72 @@
 # Minecraft Living World Wallpaper
 
-A **proposed**, lightweight, self-updating cinematic desktop representation of a real Minecraft Java world.
+A small **working starter** for Windows: transform a bounded part of a Minecraft Java world into a shader-inspired **live 3D wallpaper** with parallax, saved camera shots, simple resident-animal models, and optional refresh through Windows Task Scheduler. It reuses your existing **Lively Wallpaper**; Minecraft does not stay running.
 
-The goal is to turn selected areas of a saved Minecraft world into an atmospheric Lively Wallpaper scene with subtle **3D parallax**, adaptable framing, meaningful resident mobs, and optional video fallback—**without keeping Minecraft, its simulation, or a full shader pipeline running**.
+> **Status: v0.1 starter, not a shaderpack-equivalent release.** The complete basic pipeline has passed automated tests using an original synthetic Minecraft Java fixture and a real WebGL2 renderer smoke test. **Your actual world, Minecraft version, and Lively installation have not been tested here.** Expect missing or simplified block models and low-poly animal representations.
 
-> **Status: research and product definition only. No wallpaper engine, extractor, scheduled job or Minecraft mod has been implemented or installed.**
+## Run it
 
-## Read first
+Requires **Windows, Python 3.10+ with Tkinter**, Minecraft Java Edition 1.18+ save data, a modern browser with WebGL2, and the Lively version you already use. No pip install, Node, Java server, game mod, npm dependencies, external map software, or new background service is required for this starter.
 
-- [Product specification](docs/PRODUCT-SPEC.md) — goal, user experience, scope, constraints, success criteria, architecture and pending decisions.
-- [Existing software and technology research](docs/RESEARCH.md) — BlueMap, Vantage, Worldlens, pet/entity rendering, Lively, game-as-wallpaper mods, trade-offs and feasibility questions.
-- [Implementation plan](docs/IMPLEMENTATION-PLAN.md) — one canonical data flow, lean source layout, P0–P5 gates, testing and Copilot delegation.
-- [Feasibility issue #1](https://github.com/Playwhiteshark/minecraft-wallpaper/issues/1) — umbrella acceptance decisions.
-- [P0 implementation issue #2](https://github.com/Playwhiteshark/minecraft-wallpaper/issues/2) — small, optional Copilot-ready offline Lively proof; not assigned.
+1. Keep Minecraft **closed**. Extract this repository somewhere you want to keep its source (preferably `%USERPROFILE%\CODING STUFF\minecraft-wallpaper`).
+2. Double-click **`Launch.cmd`**, or run `py -3 app.py` from PowerShell.
+3. Choose your world from the drop-down or **Browse world** (the selected folder must contain `level.dat`). CurseForge/custom-launcher worlds can be selected by folder.
+4. Use **player position** or **world spawn** as a starting point, then enter the *actual X/Y/Z of your base*. Set a radius (start at 16–24), lighting, and **Auto-frame** distance.
+5. Optionally choose an already-installed Minecraft version JAR to use its native block textures. Nothing is downloaded; without one, the viewer uses simple colours.
+6. Click **Refresh scene**, then **Open 3D preview**. Move the mouse for parallax; in browser preview, drag to orbit and scroll to zoom. Try adjusting yaw, pitch, or radius if the base is not visible.
+7. For Lively, open **Open wallpaper folder** and import its **`index.html`** using Lively's standard Add Wallpaper UI. In Lively's library, locate the imported project folder. Back in the control panel, click **Connect Lively copy** and select that project folder. This opt-in action authorizes updates only to the marked `scene-data.js` file in that particular imported project. A future Refresh updates that file and requests a Lively web-wallpaper reload. If the import is linked rather than copied, the generated output itself may already be the active source.
 
-## Core distinction
+Lively's exact project import and page reload behavior **must be verified on your machine**. We neither install another Lively copy nor modify its binaries, registry entries, or your existing Desktop Picture patch.
 
-This is **not** an always-running Minecraft window on the desktop, or a general-purpose map of an entire world. It aims for a beautiful, base-size-aware, pet-aware, POI-aware **desktop diorama** extracted from an authentic save. Existing world-to-3D tooling should be reused rather than rewritten without evidence.
+## What the first version does
 
-## Repository ownership
+- **World and shot UI:** select Java save, dimension (Overworld/Nether/End), base centre, radius, vertical bounds, yaw/pitch/distance, lighting (golden/day/night), include important animals; save, duplicate and remove named shots. Only the **selected** shot is exported per refresh; automated switching and corridor tours are future work.
+- **Read-only world import:** read modern Anvil `.mca` chunks around the selected area, decode block-state palettes, extract selected entities from separate entity-region files. Supports a deliberately limited 1.18+ vanilla-oriented block/texture subset; unsupported modded blocks render as simple fallback cubes.
+- **Offline converter:** strip invisible opaque block faces, pack compact mesh records, and load a small set of block textures from a chosen existing version JAR (or fallback colours). Preserve enclosed-room inner faces and roof geometry rather than requiring a surface-only map export.
+- **WebGL2 scene:** load through ordinary local `script` files (no localhost webserver or `fetch`), draw at low frame rate with sunshine, ambient/directional shading, local lantern/torch light approximation, fog/tone mapping, actual mouse parallax, and simplified 3D animal shapes. This is a *shader-inspired effect*, **not Iris/Complementary/BSL shaderpack execution**.
+- **Safe refresh:** skip unchanged source when using `--refresh`; refuse likely active worlds, verify source file metadata before/after processing, validate output before replacing the generated scene script, retain one previous script. The original world is never written by the converter.
+- **Lively refresh and scheduling:** opt-in user-selected imported Lively project synchronization; Lively CLI web-page reload request when available. Optional **Weekly refresh** button creates one user-scoped Sunday 15:00 Task Scheduler action, which runs once and exits. No watcher or permanent server.
 
-This is an **independent standalone application** and owns its product design, research, future source, integration contracts and issue tracker. Local Windows Tools is not its application host or replaceable runtime; it may eventually provide a narrow, on-demand launcher/status integration. Lively Wallpaper is the existing wallpaper host.
+## Limitations / important warnings
 
-Do **not** commit personal world saves, absolute machine paths, coordinates of private POIs, sensitive world/server details, tokens or generated image/video artifacts. Local user configuration, entity identifiers and source worlds belong outside the product source checkout.
+- **Visual fidelity:** full custom block models (stairs, rails, redstone, chest/bed block entities, foliage transparency, biome-specific colour, water optics), lightmaps/soft shadow baking, precise mob variants/textures/animation, and shaderpack accuracy are not yet implemented. A few block shapes are approximated. Important animals (two happy ghasts, horse, wolf, cat) are displayed as recognisable low-poly models where saved entity data is available, **not authentic Minecraft meshes**.
+- **World formats:** Minecraft Java Anvil saves from 1.18+ only. External-chunk and newer compression variants, older palette formats, Bedrock, unusual mods, custom world heights, and advanced resource packs have not been verified. Exiting Minecraft before refresh is mandatory; the lock probe and file-stat comparison are conservative **best-effort**, not a snapshot guarantee against all concurrent writers.
+- **World coordinates:** player position may not be your base. No whole-world discovery or automatic base detection. Select an actual block area and check the result.
+- **Size:** maximum selected radius is 48 blocks and maximum mesh is 370,000 faces. Large scenes may have greater CPU/VRAM usage. Performance on your actual laptop/Lively is **unmeasured**.
+- **Automation:** weekly schedule is opt-in and checks a saved-world snapshot only when invoked; it is not an on-world-close event hook. A scheduled task depends on the source checkout/Python paths remaining stable. Use **Remove weekly task** before moving the checkout.
+- **Local Lively import:** after importing HTML, Lively may make its own managed copy. **Connect Lively copy** only after inspecting the imported project's folder; the control panel verifies a unique marker before updating only `scene-data.js`. Your other wallpapers and Lively customizations are not touched. If auto-reload is unverified, use Lively's reload option manually.
 
-[Background: original planning issue in private personal-ops](https://github.com/Playwhiteshark/personal-ops/issues/49), to be replaced by a migration pointer once transferred.
+## Command line
+
+```powershell
+py -3 app.py                 # GUI
+py -3 app.py --refresh       # changed files only, prints result
+py -3 app.py --refresh --force
+py -3 app.py --preview       # open previously generated scene
+```
+
+## Where files live
+
+- **Source checkout:** wherever you extracted/cloned this repository, preferably `%USERPROFILE%\CODING STUFF\minecraft-wallpaper`.
+- **User-owned state/output (Windows):** `%USERPROFILE%\COMPUTER STUFF\Minecraft Living World Wallpaper\` containing `config.json`, generated `wallpaper/` files, and `scene-data.previous.js` for one-step rollback. These survive uninstall/deletion of the source checkout unless **you explicitly delete** them.
+- **Original world + installed client version jar:** read-only, never copied into the repository or automatically shared.
+- **Optional Lively imported project:** only user-selected, verified MWW-owned `scene-data.js` is rewritten; it remains Lively-managed and should be removed through Lively, not guessed filesystem deletion.
+- **Caches/staging:** per-file temporary data inside the owned output/config folder, removed after success and normally failure; no hidden model downloads or external asset cache. Failure diagnostics are printed in the GUI/CLI rather than accumulated in a log.
+
+Source files are public. **Do not commit `config.json`, Minecraft saves, generated scenes, entity coordinates/UUIDs, client assets or screenshots exposing private locations.** The `.gitignore` excludes common generated paths.
+
+## Development / verification
+
+```bash
+python -m pytest -q         # developer/CI-only pytest dependency
+node --check web/viewer.js  # optional developer syntax check
+```
+
+The synthetic fixture tests assert: block palette decoding, valid world and entity import (including five animals), texture extraction, browser scene-data generation, changed-file no-op, rollback on corrupt input, safe Lively folder ownership, invalid bounds rejection, and no source save mutation. A Chromium/Xvfb WebGL2 smoke test successfully compiled/drew the generated scene with no JavaScript/GL errors. This **does not replace target Windows + Lively + actual Minecraft save testing**.
+
+## Project docs
+
+- [Product requirements](docs/PRODUCT-SPEC.md)
+- [Technical research / reuse options](docs/RESEARCH.md)
+- [Roadmap and next iteration gates](docs/IMPLEMENTATION-PLAN.md)
+- [GitHub issue tracker](https://github.com/Playwhiteshark/minecraft-wallpaper/issues)

@@ -1,6 +1,6 @@
 # Implementation plan — one working pipeline
 
-**Status:** plan only; no application code or Windows automation installed. **Owner:** `Playwhiteshark/minecraft-wallpaper`. This document is the sole code/build plan; [PRODUCT-SPEC](PRODUCT-SPEC.md) owns requirements and [RESEARCH](RESEARCH.md) owns technical evidence. **Updated:** 2026-11-09.
+**Status (2026-11-09):** v0.1 starter implements the smallest complete pipeline using a bounded stdlib Anvil reader, WebGL2 Lively scene, Tkinter control panel, saved camera shots, entity extraction and opt-in weekly task. This document is now the roadmap for improving fidelity and compatibility; actual user-world and Lively smoke tests remain pending. **Owner:** `Playwhiteshark/minecraft-wallpaper`. This document is the sole code/build plan; [PRODUCT-SPEC](PRODUCT-SPEC.md) owns requirements and [RESEARCH](RESEARCH.md) owns technical evidence. **Updated:** 2026-11-09.
 
 ## Engineering approach
 
@@ -12,6 +12,10 @@ Apply the useful AgentVerse retrospective lessons *without* its team-scale cerem
 - **Real end-to-end evidence** beats passing helper tests. Need a reproducible single-scene smoke test, a changed-block update, a moved-entity update and a failed-refresh rollback. Use the initial sample as a regression fixture, not proof that arbitrary worlds work.
 - **Minimal documentation.** Keep README, AGENTS, product spec, research and this plan, plus narrow issues. No redundant handoffs, enormous agent logs, fake status dashboards or copied GitHub Copilot instruction mirrors.
 - **Source and storage ownership.** No user worlds, private coordinates, entity UUIDs or Minecraft asset copies in this public repository. Retained scene data must not be inside Local Windows Tools' replaceable runtime.
+
+## Implemented v0.1 and upgrade path
+
+Initial code avoids downloading Vantage/BlueMap/Node/Java solely for the basic proof. A narrowly scoped, read-only Python stdlib Anvil/palette reader extracts modern Java chunks within selected bounds; **it is not a complete Minecraft world decoder**. A dependency-free WebGL2 frontend renders compact instanced faces and block PNGs extracted only from the user's own existing client JAR. Tkinter controls on-demand world/shot selection, with no resident server. A weekly task is created only by an explicit UI action. Later compare Vantage/BlueMap on the real save and replace the narrow adapter if they better support block models/lighting/version compatibility at acceptable overhead.
 
 ## Chosen preliminary stack (conditional on short preflight)
 

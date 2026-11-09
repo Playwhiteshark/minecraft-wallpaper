@@ -1,6 +1,6 @@
 # Product specification — Minecraft Living World Wallpaper
 
-**Status:** concept agreed in direction; unimplemented. **Last research review:** 2026-11-09. **Owner:** this standalone repository, not Desktop Tools or personal-ops.
+**Status:** v0.1 minimal full-pipeline starter implemented (see README); actual-world/Lively compatibility, shaderpack equivalence, authentic animal meshes and complete camera tours remain unverified/unimplemented. **Last research review:** 2026-11-09. **Owner:** this standalone repository, not Desktop Tools or personal-ops.
 
 ## Overall objective
 
@@ -34,12 +34,6 @@ A lightweight **live 3D** wallpaper with meaningful camera parallax and small in
 One challenge: light baking gives best results for a specific time of day. Treat **day/dusk/night as separate baked light profiles** or restricted lighting presets where needed, not an assumed free dynamic sun with fully accurate moving shadows. Every new scene generation may include a few lightweight lighting variants if rendering and storage cost justify them.
 
 Define at least one user-approved **shadered Minecraft reference screenshot from the same camera/time-of-day**. A map viewer that is geometrically correct but aesthetically flat **does not pass the visual acceptance gate**.
-
-### Alternative: cinematic rendered video
-
-A **pre-extracted, renderer-ready 3D scene** displayed in Lively via web technologies (subject to feasibility), where mouse movement causes shallow perspective shift. A slowly moving camera, atmospheric effects and restrained entity idle animation may run on the desktop, but the wallpaper must be able to pause or reduce activity when hidden.
-
-This is an offline display of geometry, *not* Minecraft gameplay. It need not support changing blocks, opening inventories, collisions, AI or simulated day/night progression.
 
 ### Alternative: cinematic rendered video
 
