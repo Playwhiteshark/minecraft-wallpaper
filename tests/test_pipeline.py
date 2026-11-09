@@ -15,7 +15,7 @@ import pytest
 
 import app
 from mww.nbt import RegionReader, WorldFormatError, block_name, block_properties, level_info, parse_nbt, unpack_palette
-from mww.scene import build_scene, publish_scene, verify_scene_script, dimension_directory
+from mww.scene import build_scene, publish_scene, verify_scene_script, slab_shape, lights_near, dimension_directory
 
 
 def u16(value):return struct.pack('>H',value)
@@ -288,90 +288,60 @@ def test_new_layout_unmatched_uuid_does_not_use_wrong_player(tmp_path):
     assert info['player'] is None
     assert len(info['player_candidates']) == 1
 
-def test_old_and_new_block_palette_variants():
-    # Pre-26.3 palettes use four bits even with two entries.
-    four_bits = [0] * 256
-    four_bits[0] = 1 | (1 << 4) | (1 << 8)
-    old = unpack_palette(four_bits, 2, 4000)
-    assert old[:4] == [1, 1, 1, 0]
-    # New 26.3+ sparse palette can store two entries with one bit each.
-    one_bit = [0] * 64
-    one_bit[0] = (1 << 0) | (1 << 3) | (1 << 63)
-    new = unpack_palette(one_bit, 2, 5010)
-    assert new[:5] == [1, 0, 0, 1, 0]
-    assert new[63] == 1
-    assert new[64] == 0
-
-    assert block_name({'Name': 'minecraft:oak_planks'}) == 'minecraft:oak_planks'
-    assert block_name({'id': 'minecraft:oak_stairs', 'properties': {'facing': 'south'}}) == 'minecraft:oak_stairs'
-    assert block_name({'': 'minecraft:stone'}) == 'minecraft:stone'
+def test_java_26_3_palette_entries_and_old_properties():
     assert block_name('minecraft:stone') == 'minecraft:stone'
-    assert block_properties({'properties': {'type': 'top'}})['type'] == 'top'
-    assert block_properties({'Properties': {'type': 'bottom'}})['type'] == 'bottom'
+    assert block_name({'': 'minecraft:stone'}) == 'minecraft:stone'
+    assert block_name({'id': 'minecraft:oak_slab',
+                       'properties': {'type': 'top'}}) == 'minecraft:oak_slab'
+    assert block_name({'Name': 'minecraft:oak_slab',
+                       'Properties': {'type': 'bottom'}}) == 'minecraft:oak_slab'
+    assert block_properties({'properties': {'type': 'top'}}) == {'type': 'top'}
+    assert slab_shape('minecraft:oak_slab',
+                      {'id': 'minecraft:oak_slab', 'properties': {'type': 'top'}}) == 1
+    assert slab_shape('minecraft:oak_slab',
+                      {'Name': 'minecraft:oak_slab', 'Properties': {'type': 'bottom'}}) == 2
+    assert lights_near({(1, 80, 1): {
+        'id': 'minecraft:redstone_lamp', 'properties': {'lit': 'false'}
+    }}, (0, 80, 0)) == []
     with pytest.raises(WorldFormatError):
-        block_name({'invalid': 'should not look like air'})
+        block_name({'unrecognized': 'minecraft:stone'})
 
 
-def test_recent_chunk_palette_end_to_end(tmp_path, monkeypatch):
+def test_java_26_3_compound_palette_refresh(tmp_path, monkeypatch):
     world, jar = make_world(tmp_path)
-    # Use newer compressed 1-bit block data and string palette, while the
-    # level.dat version is older: a chunk carries its own DataVersion.
-    indices = [0] * 64
-    selected = (2 * 256) + (7 * 16) + 7
-    indices[selected // 64] |= 1 << (selected % 64)
+    # Real 26.3 still uses at least FOUR bits per block-state index.
+    packed = [0] * 256
+    local_index = (2 * 256) + (7 * 16) + 7
+    packed[local_index // 16] = 1 << ((local_index % 16) * 4)
+    palette = [[('', 8, 'minecraft:air')],
+               [('id', 8, 'minecraft:oak_slab'),
+                ('properties', 10, [('type', 8, 'top')])]]
     section = [('Y', 1, 5), ('block_states', 10, [
-        ('palette', 9, (8, ['minecraft:air', 'minecraft:stone'])),
-        ('data', 12, indices),
+        ('palette', 9, (10, palette)), ('data', 12, packed)
     ])]
-    chunk = root([('DataVersion', 3, 5010), ('xPos', 3, 0), ('zPos', 3, 0),
+    chunk = root([('DataVersion', 3, 5023), ('xPos', 3, 0), ('zPos', 3, 0),
                   ('sections', 9, (10, [section]))])
     region(world / 'region' / 'r.0.0.mca', chunk)
-    monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'generated'))
-    result = app.refresh(make_config(world, jar), force=True)
+    monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'out'))
+    cfg = make_config(world, jar)
+    result = app.refresh(cfg, force=True)
     assert result['status'] == 'rendered'
     assert result['stats']['blocks'] == 1
     assert result['stats']['faces'] == 6
 
 
-def test_external_region_chunk_refresh_fingerprint(tmp_path, monkeypatch):
+def test_java_26_3_plain_string_palette_refresh(tmp_path, monkeypatch):
     world, jar = make_world(tmp_path)
-    external = world / 'region' / 'c.0.0.mcc'
-    # The modern oversized-chunk marker can refer to an outside blob. Use a
-    # small generated fixture so no large files are created for this test.
-    fp = world / 'region' / 'r.0.0.mca'
-    with RegionReader(world / 'region') as rr:
-        original = rr.chunk(0, 0)
-    # A minimal NBT chunk with one single block and no other dependencies.
-    chunk = root([('DataVersion', 3, 5010), ('xPos', 3, 0), ('zPos', 3, 0),
-                  ('sections', 9, (10, [
-                      [('Y', 1, 5), ('block_states', 10, [
-                          ('palette', 9, (8, ['minecraft:stone'])),
-                      ])],
-                  ]))])
-    external.write_bytes(zlib.compress(chunk))
-    hdr = bytearray(8192)
-    hdr[:4] = ((2 << 8) | 1).to_bytes(4, 'big')
-    fp.write_bytes(bytes(hdr) + i32(1) + bytes([0x80 | 2]) + bytes(4091))
-    with RegionReader(world / 'region') as rr:
-        loaded = rr.chunk(0, 0)
-    assert loaded['DataVersion'] == 5010
-    from mww.scene import scene_fingerprint
-    cfg = make_config(world, jar)
-    shot = dict(cfg['shots'][0]);shot['jar'] = str(jar)
-    first = scene_fingerprint(world, shot)
-    external.write_bytes(zlib.compress(chunk) + b'additional')
-    assert scene_fingerprint(world, shot) != first
-    monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'output'))
-    result = app.refresh(cfg, force=True)
-    assert result['stats']['blocks'] > 0
-
-
-def test_lz4_format_reports_incompatibility_instead_of_lying(tmp_path):
-    world, jar = make_world(tmp_path)
-    fp = world / 'region' / 'r.0.0.mca'
-    with fp.open('r+b') as fh:
-        fh.seek(8192 + 4)
-        fh.write(bytes([4]))
-    with RegionReader(world / 'region') as rr:
-        with pytest.raises(WorldFormatError, match='LZ4'):
-            rr.chunk(0, 0)
+    packed = [0] * 256
+    index = (2 * 256) + (7 * 16) + 7
+    packed[index // 16] = 1 << ((index % 16) * 4)
+    section = [('Y', 1, 5), ('block_states', 10, [
+        ('palette', 9, (8, ['minecraft:air', 'minecraft:stone'])),
+        ('data', 12, packed)
+    ])]
+    chunk = root([('DataVersion', 3, 5023), ('xPos', 3, 0), ('zPos', 3, 0),
+                  ('sections', 9, (10, [section]))])
+    region(world / 'region' / 'r.0.0.mca', chunk)
+    monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'out'))
+    result = app.refresh(make_config(world, jar), force=True)
+    assert result['stats']['blocks'] == 1

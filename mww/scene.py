@@ -67,23 +67,11 @@ def nearby_files(folder: Path, bounds):
                 yield p
 
 
-def nearby_external_files(folder: Path, bounds):
-    # Valid oversized chunks are stored as individual c.X.Z.mcc files.
-    xmin, xmax, _, _, zmin, zmax = bounds
-    for cx in range(xmin // 16, xmax // 16 + 1):
-        for cz in range(zmin // 16, zmax // 16 + 1):
-            path = folder / f'c.{cx}.{cz}.mcc'
-            if path.is_file():
-                yield path
-
-
 def input_fingerprint(world: Path, dimension: str, bounds, jar: Path | None):
     dim = dimension_directory(world, dimension)
     paths = [world / 'level.dat']
-    for kind in ('region', 'entities'):
-        folder = dim / kind
-        paths.extend(nearby_files(folder, bounds))
-        paths.extend(nearby_external_files(folder, bounds))
+    paths.extend(nearby_files(dim / 'region', bounds))
+    paths.extend(nearby_files(dim / 'entities', bounds))
     if jar and jar.is_file():
         paths.append(jar)
     items = []
