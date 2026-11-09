@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 import app
-from mww.nbt import RegionReader, WorldFormatError, parse_nbt, unpack_palette
+from mww.nbt import RegionReader, WorldFormatError, level_info, parse_nbt, unpack_palette
 from mww.scene import build_scene, publish_scene, verify_scene_script
 
 
@@ -171,3 +171,46 @@ def test_world_bounds(tmp_path):
     cfg=make_config(world,jar)
     cfg['shots'][0]['radius']=100
     with pytest.raises(ValueError):build_scene(world,cfg['shots'][0])
+
+def test_no_implicit_spawn_fallback_when_player_missing(tmp_path):
+    world=tmp_path/'No Player';world.mkdir()
+    data=[('DataVersion',3,4000),('SpawnX',3,0),('SpawnY',3,80),('SpawnZ',3,0)]
+    (world/'level.dat').write_bytes(gzip.compress(root([('Data',10,data)])))
+    info=level_info(world)
+    assert info['spawn']==[0,80,0]
+    assert info['player'] is None
+    assert info['player_source'] is None
+    assert info['player_candidates']==[]
+
+
+def test_playerdata_location_used_if_unique(tmp_path):
+    world=tmp_path/'One Player';world.mkdir()
+    data=[('DataVersion',3,4000),('SpawnX',3,0),('SpawnY',3,80),('SpawnZ',3,0)]
+    (world/'level.dat').write_bytes(gzip.compress(root([('Data',10,data)])))
+    folder=world/'playerdata';folder.mkdir()
+    (folder/'someone.dat').write_bytes(gzip.compress(root([('Pos',9,(6,[-12.25,69.9,238.1]))])))
+    info=level_info(world)
+    assert info['spawn']==[0,80,0]
+    assert info['player']==[-13,69,238]
+    assert info['player_source']=='playerdata'
+
+
+def test_playerdata_multiple_ambiguous_does_not_pick_first(tmp_path):
+    world=tmp_path/'Multiple Players';world.mkdir()
+    data=[('DataVersion',3,4000),('SpawnX',3,0),('SpawnY',3,80),('SpawnZ',3,0)]
+    (world/'level.dat').write_bytes(gzip.compress(root([('Data',10,data)])))
+    folder=world/'playerdata';folder.mkdir()
+    for name,coordinates in [('alpha',[8.,80.,9.]),('beta',[111.,50.,222.])]:
+        (folder/(name+'.dat')).write_bytes(gzip.compress(root([('Pos',9,(6,coordinates))])))
+    info=level_info(world)
+    assert info['player'] is None
+    assert len(info['player_candidates'])==2
+    assert info['player_candidates'][0]['pos']==[8,80,9]
+
+
+def test_level_dat_player_overrides_playerdata(tmp_path):
+    world=tmp_path/'Integrated';world.mkdir()
+    data=[('DataVersion',3,4000),('Player',10,[('Pos',9,(6,[5.7,69.,11.2]))]),
+          ('SpawnX',3,0),('SpawnY',3,80),('SpawnZ',3,0)]
+    (world/'level.dat').write_bytes(gzip.compress(root([('Data',10,data)])))
+    assert level_info(world)['player']==[5,69,11]
