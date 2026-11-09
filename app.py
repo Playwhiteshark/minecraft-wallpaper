@@ -223,7 +223,7 @@ def schedule_weekly(enabled: bool):
 
 def gui():
     import tkinter as tk
-    from tkinter import filedialog, messagebox, ttk
+    from tkinter import filedialog, messagebox, simpledialog, ttk
 
     bg = '#111b29'; surface = '#1b293b'; surface2 = '#25364b'; fg = '#f1f5f9'; muted = '#aebbc9'
     teal = '#40c6b8'
@@ -288,17 +288,48 @@ def gui():
             world_var.set(path)
             try:
                 info=level_info(Path(path))
-                for k,val in zip(('x','y','z'),info['player']):strings[k].set(str(val))
-                status_var.set(f"Loaded {info['name']}. Coordinates default to last saved player position; adjust to your base.")
+                location=info['player']
+                for k,val in zip(('x','y','z'),location if location is not None else ('','','')):
+                    strings[k].set(str(val))
+                if location is not None:
+                    status_var.set(f"Loaded {info['name']}. Saved player position read from {info['player_source']}.")
+                else:
+                    status_var.set('No unambiguous player position found. Click Use player position or enter base X/Y/Z manually.')
             except Exception as e:
                 messagebox.showwarning('World selection',str(e))
     ttk.Button(row,text='Browse world…',command=browse_world).pack(side='left')
     def use_location(key):
         try:
             info=level_info(Path(world_var.get()))
-            for k,v in zip(('x','y','z'),info[key]):strings[k].set(str(v))
-            status_var.set(f"Using {key} position. You can adjust it to frame the actual base.")
-        except Exception as e:messagebox.showerror('Location',str(e))
+            if key == 'spawn':
+                position=info['spawn']
+                if position is None:
+                    raise ValueError('This world has no saved spawn location. Enter coordinates manually.')
+                label='world spawn'
+            else:
+                position=info['player']
+                if position is not None:
+                    label=f"saved player location ({info['player_source']})"
+                else:
+                    candidates=info['player_candidates']
+                    if not candidates:
+                        raise ValueError('No saved player position found in level.dat or playerdata. Use F3 in Minecraft to find your base X/Y/Z, then enter them manually.')
+                    options='\n'.join(f"{i}: X={record['pos'][0]}, Y={record['pos'][1]}, Z={record['pos'][2]}" for i,record in enumerate(candidates,1))
+                    choice=simpledialog.askinteger('Choose saved player',
+                        'Several player records exist. Which coordinates are yours?\n\n' + options,
+                        parent=root, minvalue=1, maxvalue=len(candidates))
+                    if choice is None:
+                        return
+                    position=candidates[choice-1]['pos']
+                    label='selected playerdata location'
+            for k,v in zip(('x','y','z'),position):
+                strings[k].set(str(v))
+            status_var.set(f"Using {label}: X={position[0]}, Y={position[1]}, Z={position[2]}. Change the centre if your base is elsewhere.")
+        except Exception as e:
+            if key == 'player':
+                for k in ('x','y','z'):
+                    strings[k].set('')
+            messagebox.showerror('Location',str(e))
     ttk.Button(row,text='Use player position',command=lambda:use_location('player')).pack(side='left',padx=6)
     ttk.Button(row,text='Use world spawn',command=lambda:use_location('spawn')).pack(side='left')
     ttk.Separator(left).pack(fill='x',pady=18)
