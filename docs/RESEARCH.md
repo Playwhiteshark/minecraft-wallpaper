@@ -191,3 +191,30 @@ This is a **technical compatibility record**, not an assertion that all modern M
 **Refresh integrity:** the original save is read-only. Current refresh uses a lock check and source file metadata before/after extraction and preserves the prior scene script on extraction failure. This is a **best-effort consistency check**, not a verified atomic snapshot of a live-changing save; the game should be closed. Larger multi-asset scenes will need generation-level validation and atomic publication rather than a collection of unrelated file overwrites. This requirement matters to a stable future experience more than supporting every unusual region compression method.
 
 Sources: [Mojang 26.1 storage changes](https://www.minecraft.net/en-us/article/minecraft-java-edition-26-1), [Mojang 26.3 release](https://www.minecraft.net/en-us/article/minecraft-java-edition-26-3), [Mojang 26.3 Snapshot 7 block-state changes](https://feedback.minecraft.net/hc/en-us/articles/47877771669133-Minecraft-Java-Edition-26-3-Snapshot-7), [Minecraft chunk format](https://minecraft.wiki/w/Chunk_format), [Anvil region file format](https://minecraft.wiki/w/Region_file_format), [Lively CLI webpage reload](https://github.com/lively-community/lively/wiki/Command-Line-Controls).
+
+
+## November 2026 update — reusable block models, world LOD and rendering changes
+
+Research review: 2026-11-09. **Candidates only; no new dependency or install is authorised by this note.** The small currently working Python/HTML pipeline stays intact until a replacement demonstrably improves one actual scene.
+
+### Important newly identified option: [block-model-renderer](https://github.com/ewanhowell5195/block-model-renderer)
+
+This actively developed JavaScript library has **low-level scene creation**, resolved resource-pack models/blockstates, texture atlases/tints, dynamic block-entity overrides (including chests), fluids, neighbour-aware face culling and scene optimisation. The [scene-building documentation](https://github.com/ewanhowell5195/block-model-renderer/blob/master/docs/scenes.md) and [advanced APIs](https://github.com/ewanhowell5195/block-model-renderer/blob/master/README.md) make this a strong candidate for converting our *detailed near/base layer* into appropriate Minecraft-shaped geometry rather than adding a hardcoded exception per block. It supports the Minecraft 26.3 model era in its [extension guide](https://github.com/ewanhowell5195/block-model-renderer/blob/master/docs/extending.md). **MPL-2.0 licence**: preserve and examine source-file licensing obligations before copying/modifying code, unlike the MIT candidates.
+
+**Critical feasibility question:** does the low-level scene API provide an appropriate baked, reusable mesh/material output for our static offline Lively renderer, without shipping the whole Node/headless-GL/Three.js model-processing stack at runtime? The project also supports live-browser rendering, but that does **not** prove that our bundle will be small or that it handles large saved worlds directly. Confirm actual package/module sizes and use in CI/isolated conversion before deciding. It accepts the user's own local Minecraft client JAR/resource packs rather than us publishing Mojang assets.
+
+### [Vantage](https://github.com/thoughts-on-things/vantage-mc) — strongest current world-distance candidate
+
+Its [current web README](https://github.com/thoughts-on-things/vantage-mc/blob/main/web/README.md) explicitly separates zero-dependency `core` tile parsing, `three` viewer/meshes and optional React UI. It documents configurable view distance, max tile count, memory bytes, compressed tile cache and haze at the actual loaded frontier. This is directly relevant to a seamless near/mid/far landscape, but does not yet prove that Vantage preserves *all* above-ground interiors or Minecraft entity models. Prefer only the generator's offline output or a small reviewed viewer subset; don't install Vantage Desktop, React, server/live mode or a permanent watcher as a default.
+
+### [BlueMap 5.29](https://github.com/BlueMap-Minecraft/BlueMap/releases/tag/v5.29) — reliable reference / fallback
+
+October 10 release supports Minecraft Java 26.3 via its CLI, improves update detection, transactional map writes and render performance. Version 5.24 specifically added resolution of Minecraft 26.3 default states using `data/<namespace>/defaultBlockstates.json`. This is a useful correctness warning for our own model pipeline: merely recognising a compact block ID in NBT doesn't guarantee the correct **default model orientation/properties**. BlueMap 5.29's Java 25 runtime prerequisite and generated assets must be counted before adopting its CLI; its small JAR size alone does not establish low operational overhead.
+
+### Relevant Minecraft 26.3 graphics developments
+
+The [official Java 26.3 notes](https://www.minecraft.net/en-us/article/minecraft-java-edition-26-3) mention terrain MultiDrawIndirect on supported devices and updated order-independent transparency. Those are signs that the game rendering stack is evolving, **not features we can transplant directly into a WebGL2 Lively wallpaper**. Prioritise sound material categories (opaque, cutout, translucent), correct block/resource data and offline geometry generation before pursuing complex transparency or GPU-driven rendering optimisations.
+
+### Decision gate
+
+Compare the smallest credible reusable components on **one representative saved scene**: accuracy of common blocks (stairs/chests/foliage/glass), enclosed room geometry, near/far view with fog, clean offline Lively output and measured emitted bytes. Use automated synthetic checks only for important contract edges. A converter or library should be **build/update-time-only where practical**; runtime stays a static interactive wallpaper. Do not expand test burden into repeated user checks on multiple worlds or install a heavyweight app simply to access its source. Review latest upstream releases at each major geometry/material/LOD milestone rather than treating this date's shortlist as permanently authoritative.
