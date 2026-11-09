@@ -126,9 +126,15 @@
     in vec2 vUv;in vec3 vPos;in vec3 vNormal;in vec3 vTint;
     uniform sampler2D uAtlas;
     uniform bool uTransparent;
+    uniform float uCutRadius;
     ${lighting}
     out vec4 frag;
     void main(){
+      // On a continuous, fully connected landscape, these are artificial
+      // crop-box walls, not actual cliffs. Keep natural interior cliff faces.
+      if(uCutRadius>0. &&
+         ((abs(vPos.x)>=uCutRadius-.01 && vPos.x*vNormal.x>.5) ||
+          (abs(vPos.z)>=uCutRadius-.01 && vPos.z*vNormal.z>.5))) discard;
       vec4 tex=texture(uAtlas,vUv);
       if(tex.a<.12)discard;
       vec3 base=tex.rgb*vTint;
@@ -332,6 +338,7 @@
     const farRadius=Number(scene.landscape?.present>0?scene.landscape.radius:radius);
     gl.uniform1f(m('uFogNear'),Math.max(radius*.9,distance*.65));
     gl.uniform1f(m('uFogFar'),Math.max(radius*3.1,farRadius*.90,distance+radius*2.6));
+    if(prog===terrain)gl.uniform1f(m('uCutRadius'),scene.landscape?.joinable?radius:0.);
     const lights=(scene.lights||[]).slice(0,8);
     gl.uniform1i(m('uLampCount'),lights.length);
     const flat=new Float32Array(24);
@@ -405,7 +412,31 @@
   const baseFocus=hasTarget?explicitTarget.slice():surfaceFocus.slice();
   const initialYaw=rad(Number(scene.camera?.yaw||42));
   const initialPitch=rad(Number(scene.camera?.pitch||22));
-  const baseDistance=Math.max(4,Number(scene.camera?.distance||Math.max(14,scene.radius*2.2)));
+  const requestedDistance=Math.max(4,Number(scene.camera?.distance||Math.max(14,scene.radius*2.2)));
+  // Old saved shots remain unchanged. With a surrounding world, choose a
+  // camera that actually sees it rather than filling the screen with the
+  // original 24-block cutout. Explicit camera targets always take priority.
+  const visibleLandscape=Number(scene.landscape?.present||0)>0;
+  const baseDistance=(!hasTarget && visibleLandscape)
+    ? Math.max(requestedDistance,Math.min(160,Number(scene.landscape.radius)*.72))
+    : requestedDistance;
+  if(!hasTarget && visibleLandscape){
+    const data=scene.landscape,raw=fromB64(data.samples),view=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
+    const near=Number(scene.radius||24),values=[];
+    for(let z=0;z<data.size;z++)for(let x=0;x<data.size;x++){
+      const px=data.x0+x*data.step,pz=data.z0+z*data.step;
+      const edge=Math.max(Math.abs(px),Math.abs(pz));
+      if(edge<=near+data.step || edge>Math.min(data.radius*.7,near*3))continue;
+      const y=view.getInt16((z*data.size+x)*5,true);
+      if(y!==-32768)values.push(y);
+    }
+    if(values.length){
+      values.sort((a,b)=>a-b);
+      const median=values[Math.floor(values.length/2)];
+      const shift=Math.max(-20,Math.min(20,median-baseFocus[1]));
+      baseFocus[1]+=shift*.35;
+    }
+  }
   const allFocus=baseFocus.slice();
   let allDistance=baseDistance;
   if(!hasTarget && pY.length){
