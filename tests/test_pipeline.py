@@ -172,6 +172,25 @@ def test_refuse_foreign_lively_project(tmp_path):
         app.verify_owned_lively_project(p)
 
 
+
+def test_owned_lively_copy_receives_new_viewer_and_scene(tmp_path, monkeypatch):
+    world, jar = make_world(tmp_path)
+    monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'owned-output'))
+    config = make_config(world, jar)
+    app.refresh(config, force=True)
+    output = app.output_folder()
+    imported = tmp_path / 'imported-lively'
+    imported.mkdir()
+    for name in ('index.html', 'viewer.js', 'scene-data.js'):
+        (imported / name).write_bytes((output / name).read_bytes())
+    (imported / 'viewer.js').write_text(
+        (imported / 'viewer.js').read_text(encoding='utf-8') + '\\n// stale viewer')
+    (imported / 'scene-data.js').write_text('stale scene')
+    config['lively_project'] = str(imported)
+    assert app.sync_lively_project(config)
+    for name in ('viewer.js', 'scene-data.js'):
+        assert (imported / name).read_bytes() == (output / name).read_bytes()
+
 def test_scene_rejects_bad_payload():
     with pytest.raises(ValueError):verify_scene_script(b'window.MWW_SCENE = {};')
 
