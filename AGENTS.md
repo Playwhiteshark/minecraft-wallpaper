@@ -4,7 +4,7 @@ This is an **independent standalone project**, not a submodule or tool of Local 
 
 ## Required orientation
 
-1. Read [README.md](README.md), [docs/PRODUCT-SPEC.md](docs/PRODUCT-SPEC.md) and [docs/RESEARCH.md](docs/RESEARCH.md).
+1. Read [README.md](README.md), [docs/PRODUCT-SPEC.md](docs/PRODUCT-SPEC.md), [docs/RESEARCH.md](docs/RESEARCH.md) and [docs/IMPLEMENTATION-PLAN.md](docs/IMPLEMENTATION-PLAN.md). Follow the P0–P5 sequential gates; no competing runners or premature swarm.
 2. Read the user-established Local Windows Tools governance in [desktop-tools/AGENTS.md](https://github.com/Playwhiteshark/desktop-tools/blob/main/AGENTS.md), [recording/routing](https://github.com/Playwhiteshark/desktop-tools/blob/main/docs/RECORDING-AND-ROUTING.md), [filesystem conventions](https://github.com/Playwhiteshark/desktop-tools/blob/main/docs/LOCAL-FILESYSTEM-CONVENTIONS.md) and [standalone-project contract](https://github.com/Playwhiteshark/desktop-tools/blob/main/docs/STANDALONE-PROJECTS.md) before altering packaging, automation or system integration.
 3. Search source, documentation and issues before adding duplicate functionality or independent tooling.
 4. Use `main` as the only canonical long-lived branch; temporary feature branches merge back into `main`.
