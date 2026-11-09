@@ -20,6 +20,7 @@ import zipfile
 from pathlib import Path
 
 from .nbt import RegionReader, WorldFormatError, block_name, block_properties, entity_records, iterate_blocks, level_info
+from .landscape import build_landscape, SAMPLE
 
 AIR = {'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'}
 GAS = {'minecraft:water', 'minecraft:lava'}
@@ -374,20 +375,29 @@ def build_scene(world: Path, options: dict):
     bounds = (centre[0] - radius, centre[0] + radius, centre[1] - below,
               centre[1] + above, centre[2] - radius, centre[2] + radius)
     jar = find_client_jar(str(options.get('jar', '')))
+    surroundings_radius = int(options.get('landscape_radius', 128))
+    if surroundings_radius < 0 or surroundings_radius > 192 or (surroundings_radius and surroundings_radius < radius + 8):
+        raise ValueError('Surroundings radius must be 0 (off) or from detailed radius + 8 to 192')
     check_world_closed(world)
-    before = input_fingerprint(world, dimname, bounds, jar)
+    source_bounds = (centre[0] - max(radius, surroundings_radius),
+                     centre[0] + max(radius, surroundings_radius), bounds[2], bounds[3],
+                     centre[2] - max(radius, surroundings_radius),
+                     centre[2] + max(radius, surroundings_radius))
+    before = input_fingerprint(world, dimname, source_bounds, jar)
     if not any('/region/' in p.replace('\\', '/') for p, _, _ in before):
         raise WorldFormatError('No region files near the selected coordinates. Check the dimension and saved base position, or confirm chunks were generated there.')
     region_dir = dimension_directory(world, dimname)
     blocks = extract_blocks(region_dir, bounds, info['data_version'])
     entities = extract_entities(region_dir, bounds) if bool(options.get('pets', True)) else []
+    surroundings = build_landscape(region_dir, centre, radius, surroundings_radius,
+                                   color_for=fallback_color)
     bank = TextureBank(jar)
     try:
         opaque, alpha = build_mesh(blocks, centre, bank)
         tiles = bank.tiles
     finally:
         bank.close()
-    after = input_fingerprint(world, dimname, bounds, jar)
+    after = input_fingerprint(world, dimname, source_bounds, jar)
     check_world_closed(world)
     if before != after:
         raise WorldFormatError('World files changed during refresh. Close Minecraft and retry.')
@@ -398,12 +408,14 @@ def build_scene(world: Path, options: dict):
         'opaque': base64.b64encode(opaque).decode('ascii'),
         'alpha': base64.b64encode(alpha).decode('ascii'),
         'tiles': tiles,
+        'landscape': surroundings,
         'lights': lights_near(blocks, centre),
         'entities': entities[:32],
         'camera': {'yaw': float(options.get('yaw', 42)), 'pitch': float(options.get('pitch', 22)),
                    'distance': float(options.get('distance', radius * 2.2))},
         'stats': {'blocks': len(blocks), 'faces': (len(opaque) + len(alpha)) // FACE.size,
                   'animals': len(entities), 'textures': len(tiles),
+                   'landscapeSamples': surroundings['present'] if surroundings else 0,
                   'sourceJar': jar.name if jar else 'none (colour fallback)'},
     }
 
@@ -425,6 +437,13 @@ def verify_scene_script(data: bytes):
     for key in ('opaque', 'alpha'):
         if len(base64.b64decode(scene[key], validate=True)) % FACE.size:
             raise ValueError('Invalid face records')
+    landscape = scene.get('landscape')
+    if landscape is not None:
+        if landscape.get('version') != 1 or not 1 <= int(landscape.get('size', 0)) <= 97:
+            raise ValueError('Unsupported landscape format')
+        payload = base64.b64decode(landscape['samples'], validate=True)
+        if len(payload) != int(landscape['size']) ** 2 * SAMPLE.size:
+            raise ValueError('Invalid landscape sample records')
     return scene
 
 
@@ -465,7 +484,13 @@ def scene_fingerprint(world: Path, options: dict):
     bounds = (centre[0] - radius, centre[0] + radius, centre[1] - below, centre[1] + above,
               centre[2] - radius, centre[2] + radius)
     jar = find_client_jar(str(options.get('jar', '')))
-    files = input_fingerprint(world, dim, bounds, jar)
+    scenery = int(options.get('landscape_radius', 128))
+    if scenery < 0 or scenery > 192 or (scenery and scenery < radius + 8):
+        raise ValueError('Invalid surroundings radius')
+    span = max(radius, scenery)
+    extra_bounds = (centre[0] - span, centre[0] + span, bounds[2], bounds[3],
+                    centre[2] - span, centre[2] + span)
+    files = input_fingerprint(world, dim, extra_bounds, jar)
     stable_options = {k: v for k, v in options.items() if k != 'world'}
     payload = json.dumps([files, stable_options], sort_keys=True).encode('utf-8')
     return hashlib.sha256(payload).hexdigest()

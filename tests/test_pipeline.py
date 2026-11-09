@@ -91,7 +91,14 @@ def make_world(tmp_path):
         ('palette',9,(10,[[('Name',8,name)] for name in names])),
         ('data',12,packed)
     ])]
-    chunk=root([('xPos',3,0),('zPos',3,0),('sections',9,(10,[section]))])
+    # The generated chunk contains a real packed heightmap, just like vanilla
+    # region files. The single fixture section begins at Y=80 (section 5).
+    heights=[]
+    for first in range(0,256,12):
+        encoded=sum(1 << (i*5) for i in range(min(12,256-first)))
+        heights.append(encoded if encoded<2**63 else encoded-2**64)
+    chunk=root([('xPos',3,0),('zPos',3,0),('sections',9,(10,[section])),
+                ('Heightmaps',10,[('WORLD_SURFACE',12,heights)])])
     region(world/'region'/'r.0.0.mca',chunk)
     entities=[]
     for i,kind in enumerate(['happy_ghast','happy_ghast','horse','wolf','cat']):
@@ -132,6 +139,7 @@ def test_full_refresh_and_unchanged(tmp_path,monkeypatch):
     assert first['stats']['animals']==5
     assert first['stats']['blocks']>100
     assert first['stats']['faces']>50
+    assert first['stats']['landscapeSamples'] > 0
     html=app.output_folder()/'index.html'
     assert 'MWW-OWNED-WALLPAPER-V1' in html.read_text()
     data=verify_scene_script((app.output_folder()/'scene-data.js').read_bytes())
@@ -139,6 +147,7 @@ def test_full_refresh_and_unchanged(tmp_path,monkeypatch):
     assert any(x['type']=='happy_ghast' for x in data['entities'])
     assert any(t.get('png') for t in data['tiles'])
     assert data['opaque'] and data['alpha']
+    assert data['landscape']['present'] > 0
     second=app.refresh(cfg)
     assert second['status']=='unchanged'
     assert original==[hashlib.sha256(p.read_bytes()).digest() for p in source_files]
@@ -162,6 +171,25 @@ def test_refuse_foreign_lively_project(tmp_path):
     with pytest.raises(ValueError,match='not an imported'):
         app.verify_owned_lively_project(p)
 
+
+
+def test_owned_lively_copy_receives_new_viewer_and_scene(tmp_path, monkeypatch):
+    world, jar = make_world(tmp_path)
+    monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'owned-output'))
+    config = make_config(world, jar)
+    app.refresh(config, force=True)
+    output = app.output_folder()
+    imported = tmp_path / 'imported-lively'
+    imported.mkdir()
+    for name in ('index.html', 'viewer.js', 'scene-data.js'):
+        (imported / name).write_bytes((output / name).read_bytes())
+    (imported / 'viewer.js').write_text(
+        (imported / 'viewer.js').read_text(encoding='utf-8') + '\\n// stale viewer', encoding='utf-8')
+    (imported / 'scene-data.js').write_text('stale scene')
+    config['lively_project'] = str(imported)
+    assert app.sync_lively_project(config)
+    for name in ('viewer.js', 'scene-data.js'):
+        assert (imported / name).read_bytes() == (output / name).read_bytes()
 
 def test_scene_rejects_bad_payload():
     with pytest.raises(ValueError):verify_scene_script(b'window.MWW_SCENE = {};')

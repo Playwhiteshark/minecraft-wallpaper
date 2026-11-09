@@ -45,7 +45,7 @@ def default_config():
         'schema': 1, 'world': '', 'jar': '', 'lively_project': '',
         'selected': 0, 'shots': [
             {'name': 'Home base', 'dimension': 'overworld', 'x': 0, 'y': 80, 'z': 0,
-             'radius': 24, 'below': 14, 'above': 28, 'light': 'golden',
+             'radius': 24, 'landscape_radius': 128, 'below': 14, 'above': 28, 'light': 'golden',
              'yaw': 42, 'pitch': 22, 'distance': 52, 'pets': True}
         ],
         'last_fingerprint': '', 'last_stats': {},
@@ -119,10 +119,15 @@ def verify_owned_lively_project(path: Path):
         raise ValueError(f'No such Lively project directory: {path}')
     html = path / 'index.html'
     if not html.is_file() or OWNED_MARKER not in html.read_text(encoding='utf-8', errors='replace'):
-        raise ValueError('Selected folder is not an imported Minecraft Living World Wallpaper project.\n'
+        raise ValueError('Selected folder is not an imported Minecraft Living World Wallpaper project.\\n'
                          'Only a folder with our unique index.html marker is eligible for updating.')
-    if not (path / 'scene-data.js').is_file():
-        raise ValueError('Imported Lively project does not contain scene-data.js')
+    for filename in ('scene-data.js', 'viewer.js'):
+        target = path / filename
+        if target.is_symlink() or not target.is_file():
+            raise ValueError(f'Imported Lively project has no safe {filename} file')
+    if 'Minecraft Living World Wallpaper' not in (path / 'viewer.js').read_text(
+            encoding='utf-8', errors='replace')[:300]:
+        raise ValueError('Lively viewer file is not recognised as our wallpaper renderer')
 
 
 def sync_lively_project(config):
@@ -131,19 +136,27 @@ def sync_lively_project(config):
         return False
     path = Path(target).expanduser().resolve()
     verify_owned_lively_project(path)
-    source = output_folder() / 'scene-data.js'
-    data = source.read_bytes()
-    verify_scene_script(data)
-    if (path / 'scene-data.js').resolve() == source.resolve():
+    source = output_folder()
+    if path == source.resolve():
         return True
-    with tempfile.NamedTemporaryFile(dir=path, prefix='.mww-data-', delete=False) as f:
-        f.write(data)
-        temp = Path(f.name)
-    try:
-        os.replace(temp, path / 'scene-data.js')
-    finally:
-        if temp.exists():
-            temp.unlink()
+    # The original v0.1 synced only scene-data.js. A new rendering feature
+    # also needs its viewer.js to reach Lively's independently imported copy.
+    # Both destination files are verified as ours; foreign projects are refused.
+    for filename in ('viewer.js', 'scene-data.js'):
+        data = (source / filename).read_bytes()
+        if filename == 'scene-data.js':
+            verify_scene_script(data)
+        destination = path / filename
+        if destination.read_bytes() == data:
+            continue
+        with tempfile.NamedTemporaryFile(dir=path, prefix='.mww-sync-', delete=False) as f:
+            f.write(data)
+            temp = Path(f.name)
+        try:
+            os.replace(temp, destination)
+        finally:
+            if temp.exists():
+                temp.unlink()
     return True
 
 
@@ -271,7 +284,7 @@ def gui():
     world_var=tk.StringVar(value=config.get('world',''))
     jar_var=tk.StringVar(value=config.get('jar',''))
     selected=tk.IntVar(value=min(max(0,int(config.get('selected',0))),len(config['shots'])-1))
-    strings={k:tk.StringVar() for k in ('name','dimension','x','y','z','radius','below','above','light','yaw','pitch','distance')}
+    strings={k:tk.StringVar() for k in ('name','dimension','x','y','z','radius','landscape_radius','below','above','light','yaw','pitch','distance')}
     pets_var=tk.BooleanVar(value=True)
     status_var=tk.StringVar(value='Ready. Minecraft must be closed before refreshing.')
     stat_var=tk.StringVar(value='No render yet.')
@@ -345,6 +358,8 @@ def gui():
     for k in ('x','y','z'):
         ttk.Entry(coords,textvariable=strings[k],width=8).pack(side='left',padx=(0,7),fill='x',expand=True)
     line(left,'Radius (8–48)',strings['radius'])
+    line(left,'Surroundings (0–192)',strings['landscape_radius'])
+    ttk.Label(left,text='Actual saved terrain in the distance (0 = old diorama).',style='Small.TLabel').pack(anchor='w',pady=(0,3))
     def auto_frame():
         try:
             radius=int(strings['radius'].get())
@@ -371,7 +386,7 @@ def gui():
     def form_from_shot(index):
         if not (0<=index<len(config['shots'])):return
         s=config['shots'][index]
-        for k,var in strings.items():var.set(str(s.get(k,'')))
+        for k,var in strings.items():var.set(str(s.get(k,128 if k=='landscape_radius' else '')))
         pets_var.set(bool(s.get('pets',True)))
         selected.set(index)
 
@@ -387,12 +402,14 @@ def gui():
     def read_shot():
         s={k:v.get().strip() for k,v in strings.items()}
         if not s['name']:raise ValueError('Shot needs a name')
-        for k in ('x','y','z','radius','below','above'):
+        for k in ('x','y','z','radius','landscape_radius','below','above'):
             s[k]=int(s[k])
         for k in ('yaw','pitch','distance'):
             s[k]=float(s[k])
         s['pets']=bool(pets_var.get())
         if not 8<=s['radius']<=48:raise ValueError('Radius must be between 8 and 48')
+        if not (s['landscape_radius']==0 or s['radius']+8<=s['landscape_radius']<=192):
+            raise ValueError('Surroundings must be 0 or at least 8 blocks wider than the detailed radius (max 192)')
         if not 4<=s['below']<=40 or not 8<=s['above']<=60:raise ValueError('Vertical range is invalid')
         return s
 
@@ -442,7 +459,7 @@ def gui():
                     messagebox.showerror('Refresh failed',error)
                     return
                 stats=result.get('stats',{})
-                stat_var.set(f"{stats.get('blocks',0):,} blocks · {stats.get('faces',0):,} faces · {stats.get('textures',0)} textures · {stats.get('animals',0)} animals")
+                stat_var.set(f"{stats.get('blocks',0):,} blocks · {stats.get('faces',0):,} faces · {stats.get('textures',0)} textures · {stats.get('animals',0)} animals · {stats.get('landscapeSamples',0)} landscape points")
                 status_var.set('Scene refreshed. '+('Connected Lively project updated.' if result.get('synced') else 'Open preview or import to Lively.'))
                 if result.get('warning'):messagebox.showwarning('Lively update',result['warning'])
                 elif result.get('synced'):status_var.set(status_var.get()+' '+reload_lively())
