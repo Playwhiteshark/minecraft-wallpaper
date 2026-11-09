@@ -91,23 +91,73 @@ def parse_nbt(data: bytes):
     return NBTReader(data).root()
 
 
+def _saved_position(pos):
+    """Read genuine saved Pos coordinates; never substitute the world spawn."""
+    if not isinstance(pos, list) or len(pos) != 3:
+        return None
+    try:
+        numbers = [float(v) for v in pos]
+    except (ValueError, TypeError, OverflowError):
+        return None
+    if not all(math.isfinite(v) for v in numbers):
+        return None
+    return [math.floor(v) for v in numbers]
+
+
+def _playerdata_positions(world: Path):
+    """Read player records without assuming which UUID is the local player."""
+    records = []
+    folder = world / 'playerdata'
+    if not folder.is_dir():
+        return records
+    for path in sorted(folder.glob('*.dat')):
+        try:
+            if path.stat().st_size > 16_000_000:
+                continue
+            with gzip.open(path, 'rb') as f:
+                player = parse_nbt(f.read(16_000_001))
+            position = _saved_position(player.get('Pos'))
+            if position is not None:
+                records.append({'id': path.stem, 'pos': position})
+        except (OSError, EOFError, ValueError, WorldFormatError):
+            continue
+        if len(records) > 32:
+            break
+    return records
+
+
 def level_info(world: Path):
     path = world / 'level.dat'
     if not path.is_file():
         raise WorldFormatError('Not a Java world: level.dat is missing')
     with gzip.open(path, 'rb') as f:
-        root = parse_nbt(f.read(16_000_000))
+        root = parse_nbt(f.read(16_000_001))
     data = root.get('Data', root)
     version = int(data.get('DataVersion', 0))
     if version < 2860:
         raise WorldFormatError('This starter supports modern Java 1.18+ Anvil saves only')
-    player = data.get('Player', {})
-    pos = player.get('Pos') or [data.get('SpawnX', 0), data.get('SpawnY', 80), data.get('SpawnZ', 0)]
+    player = data.get('Player')
+    position = _saved_position(player.get('Pos')) if isinstance(player, dict) else None
+    source = 'level.dat' if position is not None else None
+    candidates = []
+    if position is None:
+        candidates = _playerdata_positions(world)
+        if len(candidates) == 1:
+            position = candidates[0]['pos']
+            source = 'playerdata'
+    spawn = None
+    if all(k in data for k in ('SpawnX', 'SpawnY', 'SpawnZ')):
+        try:
+            spawn = [int(data[k]) for k in ('SpawnX', 'SpawnY', 'SpawnZ')]
+        except (TypeError, ValueError):
+            pass
     return {
         'name': str(data.get('LevelName', world.name)),
         'data_version': version,
-        'spawn': [int(data.get('SpawnX', 0)), int(data.get('SpawnY', 80)), int(data.get('SpawnZ', 0))],
-        'player': [int(float(v)) for v in pos[:3]],
+        'spawn': spawn,
+        'player': position,
+        'player_source': source,
+        'player_candidates': candidates if position is None else [],
     }
 
 
