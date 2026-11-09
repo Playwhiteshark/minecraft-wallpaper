@@ -191,8 +191,39 @@ def level_info(world: Path):
 REGION_NAME = re.compile(r'^r\.(-?\d+)\.(-?\d+)\.mca$')
 
 
+MAX_COMPRESSED_CHUNK = 16_000_000
+MAX_DECODED_CHUNK = 24_000_000
+
+
+def _decode_chunk_payload(compression: int, payload: bytes, where: str) -> bytes:
+    """Bound the uncompressed output, and report unsupported valid schemes."""
+    if compression == 3:
+        if len(payload) > MAX_DECODED_CHUNK:
+            raise WorldFormatError(f'Chunk payload too large at {where}')
+        return payload
+    if compression == 4:
+        raise WorldFormatError(f'LZ4-compressed Anvil chunk at {where}; this dependency-free starter does not support LZ4. No save data was modified.')
+    if compression == 127:
+        raise WorldFormatError(f'Custom server compression at {where} is not supported by the starter.')
+    if compression not in (1, 2):
+        raise WorldFormatError(f'Chunk compression {compression} not supported at {where}')
+    try:
+        decompressor = zlib.decompressobj(16 + zlib.MAX_WBITS if compression == 1 else zlib.MAX_WBITS)
+        output = decompressor.decompress(payload, MAX_DECODED_CHUNK + 1)
+        if len(output) > MAX_DECODED_CHUNK or decompressor.unconsumed_tail:
+            raise WorldFormatError(f'Chunk decompressed beyond safety limit at {where}')
+        output += decompressor.flush()
+        if len(output) > MAX_DECODED_CHUNK:
+            raise WorldFormatError(f'Chunk decompressed beyond safety limit at {where}')
+        if not decompressor.eof:
+            raise WorldFormatError(f'Truncated or invalid compressed chunk at {where}')
+        return output
+    except zlib.error as exc:
+        raise WorldFormatError(f'Invalid chunk compression stream at {where}') from exc
+
+
 class RegionReader:
-    """Seek individual chunks; do not load an entire 32x32 region into RAM."""
+    """Seek only selected chunks in Anvil .mca files; never write to the world."""
     def __init__(self, directory: Path):
         self.directory = directory
         self.handles = {}
@@ -219,32 +250,40 @@ class RegionReader:
             self.handles[path] = (fp, header)
         fp, header = self.handles[path]
         local = (cx % 32) + (cz % 32) * 32
-        offset = local * 4
-        location = int.from_bytes(header[offset:offset + 4], 'big')
-        sector = location >> 8
-        sectors = location & 255
-        if not sector or not sectors:
+        location = int.from_bytes(header[local * 4:local * 4 + 4], 'big')
+        sector, sectors = location >> 8, location & 255
+        if not sector and not sectors:
             return None
+        if sector < 2 or sectors < 1:
+            raise WorldFormatError(f'Invalid region location in {path.name} at {cx},{cz}')
         fp.seek(sector * 4096)
-        length = struct.unpack('>I', fp.read(4))[0]
-        if length < 2 or length > sectors * 4096 - 4 or length > 16_000_000:
+        raw_length = fp.read(4)
+        if len(raw_length) != 4:
+            raise WorldFormatError(f'Truncated chunk header in {path.name} at {cx},{cz}')
+        length = struct.unpack('>I', raw_length)[0]
+        if length < 1 or length > sectors * 4096 - 4 or length > MAX_COMPRESSED_CHUNK:
             raise WorldFormatError(f'Bad chunk length in {path.name} at {cx},{cz}')
-        compression = fp.read(1)[0]
-        if compression & 0x80:
-            raise WorldFormatError('External oversized Anvil chunks are not supported in this starter')
-        raw = fp.read(length - 1)
-        if len(raw) != length - 1:
-            raise WorldFormatError('Truncated region chunk')
-        if compression == 2:
-            decoded = zlib.decompress(raw)
-        elif compression == 1:
-            decoded = gzip.decompress(raw)
-        elif compression == 3:
-            decoded = raw
+        raw_tag = fp.read(1)
+        if len(raw_tag) != 1:
+            raise WorldFormatError(f'Missing compression type in {path.name} at {cx},{cz}')
+        tag = raw_tag[0]
+        compression, external = tag & 0x7f, bool(tag & 0x80)
+        if external:
+            if length != 1:
+                raise WorldFormatError(f'Invalid external chunk marker in {path.name} at {cx},{cz}')
+            external_path = self.directory / f'c.{cx}.{cz}.mcc'
+            if not external_path.is_file():
+                raise WorldFormatError(f'External oversized chunk missing: {external_path.name}')
+            if external_path.stat().st_size > MAX_COMPRESSED_CHUNK:
+                raise WorldFormatError(f'External chunk too large: {external_path.name}')
+            payload = external_path.read_bytes()
         else:
-            raise WorldFormatError(f'Chunk compression {compression} not supported')
-        if len(decoded) > 24_000_000:
-            raise WorldFormatError('Chunk payload too large')
+            if length < 2:
+                raise WorldFormatError(f'Missing compressed payload in {path.name} at {cx},{cz}')
+            payload = fp.read(length - 1)
+            if len(payload) != length - 1:
+                raise WorldFormatError(f'Truncated region chunk in {path.name} at {cx},{cz}')
+        decoded = _decode_chunk_payload(compression, payload, f'{path.name} chunk {cx},{cz}')
         return parse_nbt(decoded)
 
 
