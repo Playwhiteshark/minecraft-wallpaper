@@ -43,13 +43,19 @@ FACE = struct.Struct('<hhhBxHBBBBxx')
 
 
 def dimension_directory(world: Path, dimension: str) -> Path:
-    if dimension == 'overworld':
-        return world
-    if dimension == 'nether':
-        return world / 'DIM-1'
-    if dimension == 'end':
-        return world / 'DIM1'
-    raise ValueError('Unknown dimension')
+    """Select Minecraft 26.1 dimension folders, retaining older saves."""
+    names = {'overworld': 'overworld', 'nether': 'the_nether', 'end': 'the_end'}
+    if dimension not in names:
+        raise ValueError('Unknown dimension')
+    modern = world / 'dimensions' / 'minecraft' / names[dimension]
+    legacy = world if dimension == 'overworld' else world / ('DIM-1' if dimension == 'nether' else 'DIM1')
+    if modern.is_dir():
+        return modern
+    if (legacy / 'region').is_dir() or (legacy / 'entities').is_dir():
+        return legacy
+    if (world / 'dimensions' / 'minecraft').is_dir():
+        return modern
+    return legacy
 
 
 def nearby_files(folder: Path, bounds):
@@ -371,7 +377,7 @@ def build_scene(world: Path, options: dict):
     check_world_closed(world)
     before = input_fingerprint(world, dimname, bounds, jar)
     if not any('/region/' in p.replace('\\', '/') for p, _, _ in before):
-        raise WorldFormatError('This dimension does not contain region files near the selected coordinates.')
+        raise WorldFormatError('No region files near the selected coordinates. Check the dimension and saved base position, or confirm chunks were generated there.')
     region_dir = dimension_directory(world, dimname)
     blocks = extract_blocks(region_dir, bounds, info['data_version'])
     entities = extract_entities(region_dir, bounds) if bool(options.get('pets', True)) else []
