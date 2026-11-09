@@ -8,7 +8,7 @@ Apply the useful AgentVerse retrospective lessons *without* its team-scale cerem
 
 - **One canonical running product.** No alternate frontends, duplicate runners, "integration agents", or parallel implementations of the conversion pipeline.
 - **One coding agent at a time**, one bounded issue/branch/PR, merge after real checks. No swarm or multiple task owners. Use Codex or GitHub Copilot for a scoped task; review the results and retain human control of Lively and world-data operations.
-- **Vertical slice first.** Get **one real bounded scene from a world save visible in Lively with Minecraft closed** before adding controls, entity animation, multiple cameras or auto-refresh. A synthetic scene only tests the renderer, not the user requirement.
+- **Vertical slice first.** Get **one real bounded scene from a world save visible in Lively with Minecraft closed**, with an immediately recognisable **shader-quality lighting target**, before adding controls, entity animation, multiple cameras or auto-refresh. A synthetic scene only tests the renderer, not the user requirement. The selected long-term experience is **live 3D with parallax**; video is only a last-resort quality/performance contingency.
 - **Real end-to-end evidence** beats passing helper tests. Need a reproducible single-scene smoke test, a changed-block update, a moved-entity update and a failed-refresh rollback. Use the initial sample as a regression fixture, not proof that arbitrary worlds work.
 - **Minimal documentation.** Keep README, AGENTS, product spec, research and this plan, plus narrow issues. No redundant handoffs, enormous agent logs, fake status dashboards or copied GitHub Copilot instruction mirrors.
 - **Source and storage ownership.** No user worlds, private coordinates, entity UUIDs or Minecraft asset copies in this public repository. Retained scene data must not be inside Local Windows Tools' replaceable runtime.
@@ -19,6 +19,7 @@ Apply the useful AgentVerse retrospective lessons *without* its team-scale cerem
 | --- | --- | --- |
 | Scene geometry conversion | Existing **Vantage native CLI**, pinned version/source and reviewed build provenance; fallback BlueMap CLI only if needed | Minecraft game, server, Java/Vantage converter, Zig toolchain |
 | Wallpaper viewer | **TypeScript + Three.js + Vantage's `core` and `three` APIs**, compiled to a static HTML/JS Lively package | React, Electron, Node service, development server |
+| Shader-quality look | **Baked/static light and AO plus bounded real-time Three.js lighting/tone mapping and optional cheap atmosphere**; user-approved shadered Minecraft reference shot | Minecraft shaderloader, player/gameplay passes, expensive full reflections or real-time whole-world global illumination |
 | Small orchestrator | **Windows PowerShell 5.1-compatible refresh script** calling one converter, checking snapshots/manifest and swapping validated output | Permanent watcher, resident PowerShell/Python process |
 | Pets | Later **minimal offline entity reader + accurate model/variant overlay**; choose implementation/runtime only after verifying entity format and existing reusable code | Mob AI/physics/pathfinding/game ticks |
 | Host | Existing **Lively Wallpaper** and its pause/input callbacks | Another wallpaper host or modification of the user's Lively DLL |
@@ -49,7 +50,8 @@ short-lived consistent snapshot of selected world files
     |
     v
 Vantage converter (bounded POI region; exits)
-    |     [P0/P1: block/terrain mesh + texture output]
+    |     [P0/P1: block/terrain mesh + texture output; preserve interiors for future shots]
+    |     [P1+: offline lighting/occlusion bake for chosen view/lighting preset]
     |     [P2: separate selective entity extractor/overlay]
     v
 staging scene generation  <--- private local camera/POI config
@@ -76,7 +78,7 @@ wallpaper/
   index.html                 # single Lively entry point
   src/main.ts                # single composition root; no alternate apps
   src/world-scene.ts         # load validated bounded geometry into Three.js
-  src/camera.ts              # saved pose, shallow mouse parallax, composition
+  src/camera.ts              # saved pose, shallow mouse parallax; shots/zones later
   src/lively.ts              # pause/resume, input/settings adapter
   src/entities.ts            # added in P2; models and visual-only idle
 refresh/
@@ -116,21 +118,24 @@ For future `.local-windows-tools.json` integration, classify `logs/cache/state/c
 - Read a pinned Vantage `core`/`three` API/version and licence; choose smallest import set. Confirm the native CLI's Windows binary availability, precise output format and bounded-area controls.
 - Add TypeScript/Vite + Three.js minimal app, **no React/Electron**. Build one canonical static `index.html`; no runtime npm.
 - Test raw imported geometry and packaged assets without a live webserver. Support paused/no-activity behaviour via Lively callbacks. No camera free-fly UI yet.
+- Make the **shader-look approach visible early**: one carefully lit synthetic composition using fixed sun/ambient terms, cheap occlusion/contact shading and tone mapping. If needed, demonstrate lightweight baked lighting and explain its update-time costs. **Do not** implement a full shaderpack, reflections, volumetric sky system, corridor tour or dynamic GI in P0. An unlit textured cube is insufficient as a visual-design proof, although it can pass a geometry-loading microtest.
+- Include a tiny **closed-room/corridor fixture** or equivalent visibility check to establish that the rendering path can preserve **interior-facing** surfaces rather than only surface-map geometry; this is a compatibility experiment, not a room navigation system.
 - Run ordinary browser preview and a **user/local Lively smoke test**. If Lively-only testing isn't possible from cloud CI, report **unverified** and do not claim gate completion.
 - Track package bytes, installed binary bytes and generated-scene bytes. No arbitrary app/system installation.
 
-**Gate:** scene visibly renders, actual 3D camera viewpoint changes, no Minecraft/Node/server resident during display; offline Lively load validated. A synthetic cube alone does not meet the *real-world* acceptance gate.
+**Gate:** scene visibly renders with purposeful simple lighting and actual 3D camera movement, no Minecraft/Node/server resident during display; offline Lively load validated. Record whether interior faces are present and why. A synthetic fixture is **not** a real-world or shader-quality acceptance result.
 
 ### P1 — One real saved-world base scene (first real vertical slice)
 
 **Output:** an actual user's small base, cropped deliberately, viewable as a pleasing perspective scene while Minecraft is closed.
 
 - Operate on a verified safe snapshot. Read-only world input; produce **one** bounded render generation from Vantage (BlueMap fallback on failure).
-- Bridge generated tiles/texture arrays to `loadScene`, apply one saved camera pose, usable light/fog/sky, and shallow parallax.
+- Bridge generated tiles/texture arrays to `loadScene`, apply one saved camera pose, **shader-inspired baked/static lighting, shadows/ambient occlusion, sky/exposure and restrained atmosphere**, and shallow parallax. Use the user's shadered Minecraft screenshot from the **same camera/time of day** for a side-by-side quality check, not a generic marketing screenshot. Avoid heavy always-on reflective/volumetric effects.
+- **Verify interior compatibility now:** on a safe example room/cave or owned synthetic sample, demonstrate that selected enclosed inner wall/ceiling/floor surfaces aren't discarded by a surface-only or cave-suppression map exporter. Vantage's optional full cave export may be relevant but cannot be assumed sufficient until tested for rooms above ground. If required, change the bounded geometry extraction strategy before building pets and scene controls.
 - Document pixel-equivalent comparison against a screenshot of the same area so block geometry, transparency, water and chests are not silently incorrect.
 - Check bounds/scale: bed and chests must be recognisable; do not frame the whole continent.
 
-**Gate:** real base visible, no simulation or resident converter; verified screenshot from actual Lively; inspect GPU/CPU when visible and paused. A mocked scene is not acceptance.
+**Gate:** real base visible, no simulation or resident converter; verified screenshot from actual Lively and honest **same-shot comparison to a user-approved shadered-game reference**; inspect GPU/CPU when visible and paused. A merely map-like rendering is not sufficient. Interior geometry must be demonstrably supportable before deeper commitment. A mocked scene is not acceptance.
 
 ### P2 — Pets are meaningful, not incidental
 
@@ -155,15 +160,20 @@ For future `.local-windows-tools.json` integration, classify `logs/cache/state/c
 
 **Gate:** change one block, refresh, updated scene appears; failed render leaves previous working scene and original world untouched.
 
-### P4 — Scene direction and multiple POIs
+### P4 — Shot direction, future interiors/corridors and POIs
 
-**Output:** user can add a base/POI and choose camera/lighting, without starting Minecraft or opening a large map application.
+**Output:** user can add a base/POI, choose saved camera/lighting profiles and *eventually* develop a small network of interior and exterior viewpoints, without starting Minecraft or opening a large map application.
 
 - Keep settings UI small and explicit (single local config or tiny on-demand editor), not a new desktop dashboard.
+- Model **site/POI → zones (exterior, courtyard, room, corridor, doorway/threshold, stairs) → named shots → safe transitions** in private per-world config. **Do not create a complex camera graph implementation before the second actual shot exists.** Begin with manually pinned shots and stable IDs; a corridor is a connection/transition between rooms, not a new independently managed world.
+- Each shot may specify camera anchor, look-at target, field of view, small allowed mouse-parallax region, distance/subject framing and lighting/exposure profile; each transition may specify a simple slow path or a cinematic cut/fade. Validate camera clearance and line of sight **offline against saved block geometry**, not via a live physics/gameplay engine. If a player builds a new wall that blocks a shot, preserve a last-valid view and report instead of flying through the wall.
+- For a future interior tour: outside base establishing view → doorway/threshold → gentle slow pass down a lit corridor → stable composition inside a room. Prefer cuts where a safe movement would feel clumsy or require loading too much geometry. Keep a shallow idle parallax option within each shot; allow tiny click/gesture next-shot interaction without interfering with normal desktop icons.
+- Keep **exterior and interior meshes complete for the permitted camera envelopes** (especially roof/ceiling, inner walls and transparent doors/windows), but load only active zone and bounded near-next transition assets. Indoor lighting may use different precomputed presets than exterior daylight; avoid recalculating every room's lights every frame.
+- Auto-suggest camera viewpoints later from bounded geometry and visible points of interest; user-approved compositions remain stable. No blind automatic pathfinding, architectural room classifier, always-on 3D engine or free-roam game.
 - Bounds set manually first; auto-frame from observed scene content, then conservative base-growth assistance with user correction.
 - Optionally rotate between named scenic locations. Keep each scene's tile budget bounded and load only active/near-next assets.
-- Add selective entity idle, shader-like sky/water effects **only** if power and visual quality justify them.
-- If necessary, add optional pre-rendered video scene type. This is a fallback, not a second simultaneously maintained application.
+- Add selective entity idle and optional polish to the **already-required shader-quality style** only when power and visual quality justify them (e.g., stronger fog, low-cost water motion, tasteful bloom). Do not defer all meaningful lighting to this phase.
+- If a convincing live shader-quality scene remains infeasible at a measured low resource budget, compare an optional pre-rendered shadered-video scene. This is a **fallback**, not an equal-priority second application.
 
 ### P5 — Automatic updates and distribution (last)
 
@@ -173,10 +183,14 @@ For future `.local-windows-tools.json` integration, classify `logs/cache/state/c
 - Benchmark visible/paused/fullscreen/focus/battery, disk footprint incl. old generations, startup time and update-time memory. Preserve existing Lively Desktop Picture compatibility patch.
 - Document explicit install, refresh, disable, reset, uninstall, and preservation of world/POI user data.
 
+## Planned internal camera data contract (future P4, not P0 code)
+
+A private, machine-local scene manifest can eventually contain a **site** (dimension + selected bounds) with **zones** (type, bounds, optional subject/entity pins), **shots** (stable ID, pose/lookAt, field of view, permitted parallax region, subject framing and lighting profile) and **transitions** (from/to shot IDs, either a checked camera spline or cut/fade). Persist no personal coordinates, UUIDs or world paths in the public repo. Preserve curated shots across updates; validate their safe camera envelope against changed blocks and record a fallback shot. This can begin as one flat scene with one camera; do not build an abstract scene registry prematurely.
+
 ## Automated verification (small but meaningful)
 
 - `npm run typecheck`, `npm run test`, `npm run build` for the wallpaper frontend; test suite should be small and directly tied to behavior.
-- Test pure camera transforms and clamped parallax, scene manifest version/path validation and tile-decoder compatibility with a **license-safe generated fixture** (do not commit the user's world).
+- Test pure camera transforms and clamped parallax, scene manifest version/path validation and tile-decoder compatibility with a **license-safe generated fixture** (do not commit the user's world). Include a **tiny enclosed-room fixture** where all inside walls/ceiling/floor render from a camera inside; later add camera clearance/blocked-shot tests when transitions exist.
 - Script-level tests on generated temporary directories for unchanged/changed fingerprint, rejected in-use world, missing/corrupt output, repeat refresh, rollback and owned scratch cleanup.
 - Actual Windows + Lively + Minecraft-world tests are **manual/target-machine gates**, cannot be replaced by CI green badges.
 - Preview screenshot/short capture alongside actual action path whenever assessing aesthetics. Compare visible result, not just correct function returns.
