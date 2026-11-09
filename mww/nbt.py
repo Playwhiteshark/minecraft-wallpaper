@@ -6,6 +6,7 @@ import io
 import math
 import re
 import struct
+import uuid
 import zlib
 from pathlib import Path
 
@@ -104,25 +105,46 @@ def _saved_position(pos):
     return [math.floor(v) for v in numbers]
 
 
+def _uuid_from_nbt(raw):
+    """Minecraft UUID can be an NBT int[4] array or a UUID string."""
+    try:
+        if isinstance(raw, str):
+            return str(uuid.UUID(raw))
+        if isinstance(raw, list) and len(raw) == 4:
+            value = b''.join((int(v) & 0xffffffff).to_bytes(4, 'big') for v in raw)
+            return str(uuid.UUID(bytes=value))
+        if isinstance(raw, list) and len(raw) == 2:
+            value = b''.join((int(v) & 0xffffffffffffffff).to_bytes(8, 'big') for v in raw)
+            return str(uuid.UUID(bytes=value))
+    except (ValueError, TypeError, OverflowError):
+        pass
+    return None
+
+
 def _playerdata_positions(world: Path):
-    """Read player records without assuming which UUID is the local player."""
-    records = []
-    folder = world / 'playerdata'
-    if not folder.is_dir():
-        return records
-    for path in sorted(folder.glob('*.dat')):
-        try:
-            if path.stat().st_size > 16_000_000:
-                continue
-            with gzip.open(path, 'rb') as f:
-                player = parse_nbt(f.read(16_000_001))
-            position = _saved_position(player.get('Pos'))
-            if position is not None:
-                records.append({'id': path.stem, 'pos': position})
-        except (OSError, EOFError, ValueError, WorldFormatError):
+    """Read 26.1+ players/data or older playerdata, preferring the new layout."""
+    records, seen = [], set()
+    for folder_name in ('players/data', 'playerdata'):
+        folder = world / folder_name
+        if not folder.is_dir():
             continue
-        if len(records) > 32:
-            break
+        for path in sorted(folder.glob('*.dat')):
+            key = path.stem.lower()
+            if key in seen:
+                continue
+            try:
+                if path.stat().st_size > 16_000_000:
+                    continue
+                with gzip.open(path, 'rb') as f:
+                    player = parse_nbt(f.read(16_000_001))
+                position = _saved_position(player.get('Pos'))
+                if position is not None:
+                    records.append({'id': key, 'pos': position, 'folder': folder_name})
+                    seen.add(key)
+            except (OSError, EOFError, ValueError, WorldFormatError):
+                continue
+            if len(records) >= 32:
+                return records
     return records
 
 
@@ -142,9 +164,14 @@ def level_info(world: Path):
     candidates = []
     if position is None:
         candidates = _playerdata_positions(world)
-        if len(candidates) == 1:
+        selected_uuid = _uuid_from_nbt(data.get('singleplayer_uuid'))
+        selected = next((r for r in candidates if r['id'] == selected_uuid), None) if selected_uuid else None
+        if selected is not None:
+            position = selected['pos']
+            source = selected['folder'] + ' (singleplayer_uuid)'
+        elif not selected_uuid and len(candidates) == 1:
             position = candidates[0]['pos']
-            source = 'playerdata'
+            source = candidates[0]['folder']
     spawn = None
     if all(k in data for k in ('SpawnX', 'SpawnY', 'SpawnZ')):
         try:
