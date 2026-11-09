@@ -290,10 +290,21 @@ class RegionReader:
 def unpack_palette(values, palette_length: int, data_version: int, count: int = 4096):
     if palette_length < 2:
         return [0] * count
-    bits = max(4, (palette_length - 1).bit_length())
-    mask = (1 << bits) - 1
     if not values:
         raise WorldFormatError('Palette has multiple states but no block data')
+    if data_version >= 2529:
+        # Minecraft palette encodings evolve. The array length tells us the
+        # stored bit width without guessing from level.dat or hardcoding
+        # old four-bit minimums. A section contains exactly 4096 indices.
+        bits = next((
+            b for b in range(max(1, (palette_length - 1).bit_length()), 17)
+            if len(values) == (count + (64 // b) - 1) // (64 // b)
+        ), None)
+        if bits is None:
+            raise WorldFormatError('Invalid paletted block-array length for this section')
+    else:
+        bits = max(4, (palette_length - 1).bit_length())
+    mask = (1 << bits) - 1
     unsigned = [value & 0xFFFFFFFFFFFFFFFF for value in values]
     result = []
     if data_version >= 2529:
@@ -321,9 +332,23 @@ def unpack_palette(values, palette_length: int, data_version: int, count: int = 
 
 
 def block_name(state):
-    if isinstance(state, str):
+    """Minecraft 1.18+ and newer block-state identifiers, including 26.3."""
+    if isinstance(state, str) and state:
         return state
-    return str(state.get('Name') or state.get('id') or 'minecraft:air')
+    if isinstance(state, dict):
+        name = state.get('Name') or state.get('id') or state.get('')
+        if isinstance(name, str) and name:
+            return name
+    raise WorldFormatError('Unknown block-state palette entry; refusing to render it as air')
+
+
+def block_properties(state):
+    if not isinstance(state, dict):
+        return {}
+    properties = state.get('Properties')
+    if properties is None:
+        properties = state.get('properties')
+    return properties if isinstance(properties, dict) else {}
 
 
 def iterate_blocks(chunk, cx: int, cz: int, version: int, bounds):
@@ -338,7 +363,7 @@ def iterate_blocks(chunk, cx: int, cz: int, version: int, bounds):
         palette = states.get('palette') or states.get('Palette') or []
         if not palette:
             continue
-        indexes = unpack_palette(states.get('data') or states.get('BlockStates') or [], len(palette), version)
+        indexes = unpack_palette(states.get('data') or states.get('BlockStates') or [], len(palette), int(chunk.get('DataVersion', version)))
         for index, palette_index in enumerate(indexes):
             state = palette[palette_index]
             name = block_name(state)
