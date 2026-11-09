@@ -17,6 +17,7 @@ body.night { background:radial-gradient(ellipse at 58% 32%, #31475e 0%, #18273e 
 body:hover #controls, body.preview #controls {opacity:.9;}
 button {width:38px;height:38px;border-radius:11px;border:1px solid rgba(255,255,255,.22);
  background:rgba(13,24,35,.56);color:white;cursor:pointer;backdrop-filter:blur(8px);font-size:18px;}
+#frame {width:47px;font-size:12px;font-weight:600;}
 button:hover {background:rgba(65,99,124,.75);} button:focus-visible {outline:2px solid #fff;}
 #error {position:absolute;top:20px;left:20px;right:20px;max-width:700px;padding:14px 18px;
  background:#531c23;color:#fff;border:1px solid #ef8793;border-radius:12px;font-size:13px;white-space:pre-wrap;}
