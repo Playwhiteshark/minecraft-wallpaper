@@ -6,7 +6,7 @@ A small **working starter** for Windows: transform a bounded part of a Minecraft
 
 ## Run it
 
-Requires **Windows, Python 3.10+ with Tkinter**, Minecraft Java Edition 1.18+ save data, a modern browser with WebGL2, and the Lively version you already use. No pip install, Node, Java server, game mod, npm dependencies, external map software, or new background service is required for this starter.
+Requires **Windows, Python 3.10+ with Tkinter**, Minecraft Java Edition 1.18+ save data, including the 26.1 world-folder layout, a modern browser with WebGL2, and the Lively version you already use. No pip install, Node, Java server, game mod, npm dependencies, external map software, or new background service is required for this starter.
 
 1. Keep Minecraft **closed**. Clone this repository into a permanent project folder (for example `%USERPROFILE%\CODING STUFF\minecraft-wallpaper`) and update it from `main` with `git pull --ff-only`.
 2. Double-click **`Launch.cmd`**, or run `py -3 app.py` from PowerShell.
@@ -41,7 +41,7 @@ Lively's exact project import and page reload behavior **must be verified on you
 ## Limitations / important warnings
 
 - **Visual fidelity:** full custom block models (stairs, rails, redstone, chest/bed block entities, foliage transparency, biome-specific colour, water optics), lightmaps/soft shadow baking, precise mob variants/textures/animation, and shaderpack accuracy are not yet implemented. A few block shapes are approximated. Important animals (two happy ghasts, horse, wolf, cat) are displayed as recognisable low-poly models where saved entity data is available, **not authentic Minecraft meshes**.
-- **World formats:** Minecraft Java Anvil saves from 1.18+ only. External-chunk and newer compression variants, older palette formats, Bedrock, unusual mods, custom world heights, and advanced resource packs have not been verified. Exiting Minecraft before refresh is mandatory; the lock probe and file-stat comparison are conservative **best-effort**, not a snapshot guarantee against all concurrent writers.
+- **World formats:** Minecraft Java Anvil saves from 1.18+; folder lookup now supports 26.1's `players/data/` and `dimensions/minecraft/<dimension>/` structure. The new `singleplayer_uuid` reference in `level.dat` selects the correct player record.  External-chunk and newer compression variants, older palette formats, Bedrock, unusual mods, custom world heights, and advanced resource packs have not been verified. Exiting Minecraft before refresh is mandatory; the lock probe and file-stat comparison are conservative **best-effort**, not a snapshot guarantee against all concurrent writers.
 - **World coordinates:** player position may not be your base. No whole-world discovery or automatic base detection. Select an actual block area and check the result.
 - **Size:** maximum selected radius is 48 blocks and maximum mesh is 370,000 faces. Large scenes may have greater CPU/VRAM usage. Performance on your actual laptop/Lively is **unmeasured**.
 - **Automation:** weekly schedule is opt-in and checks a saved-world snapshot only when invoked; it is not an on-world-close event hook. A scheduled task depends on the source checkout/Python paths remaining stable. Use **Remove weekly task** before moving the checkout.
@@ -80,3 +80,7 @@ The synthetic fixture tests assert: block palette decoding, valid world and enti
 - [Product requirements](docs/PRODUCT-SPEC.md)
 - [Technical research / reuse options](docs/RESEARCH.md)
 - [GitHub issue tracker](https://github.com/Playwhiteshark/minecraft-wallpaper/issues)
+
+### Minecraft 26.1 save compatibility
+
+Minecraft Java 26.1 moved the Overworld, Nether and End chunk/entity directories under `dimensions/minecraft/` and the per-player data to `players/data/`. The 26.1 `level.dat` `singleplayer_uuid` reference identifies the local player; older worlds continue to use embedded `Data.Player` or `playerdata/`. This application reads either layout without moving or rewriting files. The old 1.18+ block-palette extractor remains limited and real-world rendering must be validated against the selected game version.
