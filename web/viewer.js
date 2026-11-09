@@ -347,21 +347,20 @@
     return [0,Math.max(-256,Math.min(256,h+1.5)),0];
   }
   const surfaceFocus=terrainFocus([opaque,alpha]);
-  // The eventual saved-shot system can supply an explicit 3D camera target.
   const pY=(scene.entities||[]).map(e=>Number(e.pos?.[1])-Number(scene.origin?.[1]))
     .filter(Number.isFinite).sort((a,b)=>a-b);
   const explicitTarget=scene.camera?.target;
   const hasTarget=Array.isArray(explicitTarget)&&explicitTarget.length===3&&explicitTarget.every(Number.isFinite);
-  const firstFocus=hasTarget?explicitTarget.slice():surfaceFocus.slice();
+  const baseFocus=hasTarget?explicitTarget.slice():surfaceFocus.slice();
   const initialYaw=rad(Number(scene.camera?.yaw||42));
   const initialPitch=rad(Number(scene.camera?.pitch||22));
-  let yaw=initialYaw,pitch=initialPitch,mouseX=0,mouseY=0,motion=true,paused=false;
-  let distance=Math.max(4,Number(scene.camera?.distance||Math.max(14,scene.radius*2.2)));
+  const baseDistance=Math.max(4,Number(scene.camera?.distance||Math.max(14,scene.radius*2.2)));
+  const allFocus=baseFocus.slice();
+  let allDistance=baseDistance;
   if(!hasTarget && pY.length){
     const bottom=Math.min(surfaceFocus[1]-2,pY[0]-1);
     const top=Math.max(surfaceFocus[1]+3,pY[pY.length-1]+4);
-    firstFocus[1]=(bottom+top)/2;
-    // Fit the base and its saved residents into a single practical shot.
+    allFocus[1]=(bottom+top)/2;
     const r=Math.max(4,Number(scene.radius||24));
     const halfSpan=(top-bottom)/2;
     const cp=Math.abs(Math.cos(initialPitch)),sp=Math.abs(Math.sin(initialPitch));
@@ -369,12 +368,13 @@
     const depthHalf=halfSpan*sp+r*.85*cp;
     const aspect=Math.max(1,canvas.clientWidth/Math.max(1,canvas.clientHeight));
     const required=Math.max(vHalf/Math.tan(rad(30)),r/(Math.tan(rad(30))*aspect))+depthHalf;
-    distance=Math.max(distance,required*1.12);
+    allDistance=Math.max(baseDistance,required*1.12);
   }
-  // Leave the decoded buffers to the GPU rather than retaining a second
-  // CPU copy just for the one-time camera fit.
   delete opaque.bytes;delete alpha.bytes;
-  const initialDistance=distance;
+  let framingAll=false;
+  let firstFocus=baseFocus;
+  let yaw=initialYaw,pitch=initialPitch,mouseX=0,mouseY=0,motion=true,paused=false;
+  let distance=baseDistance;
   let lastDraw=0,frameQueued=false,atlas=null;
   let dragging=false,dragX=0,dragY=0;
   const start=performance.now();
@@ -427,7 +427,17 @@
   const turn=d=>{yaw+=d;request();};
   document.getElementById('left').onclick=()=>turn(-rad(15));
   document.getElementById('right').onclick=()=>turn(rad(15));
-  document.getElementById('reset').onclick=()=>{yaw=initialYaw;pitch=initialPitch;distance=initialDistance;mouseX=mouseY=0;request();};
+  const frameButton=document.getElementById('frame');
+  frameButton.onclick=()=>{
+    framingAll=!framingAll;
+    firstFocus=framingAll?allFocus:baseFocus;
+    distance=framingAll?allDistance:baseDistance;
+    frameButton.textContent=framingAll?'Base':'All';request();
+  };
+  document.getElementById('reset').onclick=()=>{
+    yaw=initialYaw;pitch=initialPitch;distance=baseDistance;mouseX=mouseY=0;
+    framingAll=false;firstFocus=baseFocus;frameButton.textContent='All';request();
+  };
   const motionButton=document.getElementById('motion');
   motionButton.onclick=()=>{motion=!motion;motionButton.textContent=motion?'❚❚':'▶';request();};
   document.addEventListener('visibilitychange',()=>{paused=document.hidden;if(!paused)request();});
