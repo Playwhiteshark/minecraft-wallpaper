@@ -19,7 +19,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from .nbt import RegionReader, WorldFormatError, block_name, entity_records, iterate_blocks, level_info
+from .nbt import RegionReader, WorldFormatError, block_name, block_properties, entity_records, iterate_blocks, level_info
 
 AIR = {'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'}
 GAS = {'minecraft:water', 'minecraft:lava'}
@@ -67,11 +67,23 @@ def nearby_files(folder: Path, bounds):
                 yield p
 
 
+def nearby_external_files(folder: Path, bounds):
+    # Valid oversized chunks are stored as individual c.X.Z.mcc files.
+    xmin, xmax, _, _, zmin, zmax = bounds
+    for cx in range(xmin // 16, xmax // 16 + 1):
+        for cz in range(zmin // 16, zmax // 16 + 1):
+            path = folder / f'c.{cx}.{cz}.mcc'
+            if path.is_file():
+                yield path
+
+
 def input_fingerprint(world: Path, dimension: str, bounds, jar: Path | None):
     dim = dimension_directory(world, dimension)
     paths = [world / 'level.dat']
-    paths.extend(nearby_files(dim / 'region', bounds))
-    paths.extend(nearby_files(dim / 'entities', bounds))
+    for kind in ('region', 'entities'):
+        folder = dim / kind
+        paths.extend(nearby_files(folder, bounds))
+        paths.extend(nearby_external_files(folder, bounds))
     if jar and jar.is_file():
         paths.append(jar)
     items = []
@@ -113,7 +125,7 @@ def is_transparent(name: str) -> bool:
 
 def slab_shape(name: str, state) -> int:
     if name.endswith('_slab'):
-        mode = state.get('Properties', {}).get('type', 'bottom') if isinstance(state, dict) else 'bottom'
+        mode = block_properties(state).get('type', 'bottom')
         return 1 if mode == 'top' else 2 if mode == 'bottom' else 0
     if name.endswith('_carpet'):
         return 3
@@ -309,7 +321,7 @@ def lights_near(blocks: dict, centre):
         level = next((v for k, v in LIGHT.items() if k in short), 0)
         if not level:
             continue
-        if 'redstone_lamp' in short and isinstance(state, dict) and state.get('Properties', {}).get('lit') == 'false':
+        if 'redstone_lamp' in short and isinstance(state, dict) and block_properties(state).get('lit') == 'false':
             continue
         dx, dy, dz = x - centre[0], y - centre[1], z - centre[2]
         dist = dx * dx + dy * dy + dz * dz
