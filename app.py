@@ -314,9 +314,9 @@ def gui():
                     candidates=info['player_candidates']
                     if not candidates:
                         raise ValueError('No saved player position found in level.dat or playerdata. Use F3 in Minecraft to find your base X/Y/Z, then enter them manually.')
-                    options='\\n'.join(f"{i}: X={record['pos'][0]}, Y={record['pos'][1]}, Z={record['pos'][2]}" for i,record in enumerate(candidates,1))
+                    options='\n'.join(f"{i}: X={record['pos'][0]}, Y={record['pos'][1]}, Z={record['pos'][2]}" for i,record in enumerate(candidates,1))
                     choice=simpledialog.askinteger('Choose saved player',
-                        'Several player records exist. Which coordinates are yours?\\n\\n' + options,
+                        'Several player records exist. Which coordinates are yours?\n\n' + options,
                         parent=root, minvalue=1, maxvalue=len(candidates))
                     if choice is None:
                         return
