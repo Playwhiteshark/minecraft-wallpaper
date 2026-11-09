@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 import app
-from mww.nbt import RegionReader, WorldFormatError, level_info, parse_nbt, unpack_palette
-from mww.scene import build_scene, publish_scene, verify_scene_script, dimension_directory
+from mww.nbt import RegionReader, WorldFormatError, block_name, block_properties, level_info, parse_nbt, unpack_palette
+from mww.scene import build_scene, publish_scene, verify_scene_script, slab_shape, lights_near, dimension_directory
 
 
 def u16(value):return struct.pack('>H',value)
@@ -287,3 +287,61 @@ def test_new_layout_unmatched_uuid_does_not_use_wrong_player(tmp_path):
     info = level_info(world)
     assert info['player'] is None
     assert len(info['player_candidates']) == 1
+
+def test_java_26_3_palette_entries_and_old_properties():
+    assert block_name('minecraft:stone') == 'minecraft:stone'
+    assert block_name({'': 'minecraft:stone'}) == 'minecraft:stone'
+    assert block_name({'id': 'minecraft:oak_slab',
+                       'properties': {'type': 'top'}}) == 'minecraft:oak_slab'
+    assert block_name({'Name': 'minecraft:oak_slab',
+                       'Properties': {'type': 'bottom'}}) == 'minecraft:oak_slab'
+    assert block_properties({'properties': {'type': 'top'}}) == {'type': 'top'}
+    assert slab_shape('minecraft:oak_slab',
+                      {'id': 'minecraft:oak_slab', 'properties': {'type': 'top'}}) == 1
+    assert slab_shape('minecraft:oak_slab',
+                      {'Name': 'minecraft:oak_slab', 'Properties': {'type': 'bottom'}}) == 2
+    assert lights_near({(1, 80, 1): {
+        'id': 'minecraft:redstone_lamp', 'properties': {'lit': 'false'}
+    }}, (0, 80, 0)) == []
+    with pytest.raises(WorldFormatError):
+        block_name({'unrecognized': 'minecraft:stone'})
+
+
+def test_java_26_3_compound_palette_refresh(tmp_path, monkeypatch):
+    world, jar = make_world(tmp_path)
+    # Real 26.3 still uses at least FOUR bits per block-state index.
+    packed = [0] * 256
+    local_index = (2 * 256) + (7 * 16) + 7
+    packed[local_index // 16] = 1 << ((local_index % 16) * 4)
+    palette = [[('', 8, 'minecraft:air')],
+               [('id', 8, 'minecraft:oak_slab'),
+                ('properties', 10, [('type', 8, 'top')])]]
+    section = [('Y', 1, 5), ('block_states', 10, [
+        ('palette', 9, (10, palette)), ('data', 12, packed)
+    ])]
+    chunk = root([('DataVersion', 3, 5023), ('xPos', 3, 0), ('zPos', 3, 0),
+                  ('sections', 9, (10, [section]))])
+    region(world / 'region' / 'r.0.0.mca', chunk)
+    monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'out'))
+    cfg = make_config(world, jar)
+    result = app.refresh(cfg, force=True)
+    assert result['status'] == 'rendered'
+    assert result['stats']['blocks'] == 1
+    assert result['stats']['faces'] == 6
+
+
+def test_java_26_3_plain_string_palette_refresh(tmp_path, monkeypatch):
+    world, jar = make_world(tmp_path)
+    packed = [0] * 256
+    index = (2 * 256) + (7 * 16) + 7
+    packed[index // 16] = 1 << ((index % 16) * 4)
+    section = [('Y', 1, 5), ('block_states', 10, [
+        ('palette', 9, (8, ['minecraft:air', 'minecraft:stone'])),
+        ('data', 12, packed)
+    ])]
+    chunk = root([('DataVersion', 3, 5023), ('xPos', 3, 0), ('zPos', 3, 0),
+                  ('sections', 9, (10, [section]))])
+    region(world / 'region' / 'r.0.0.mca', chunk)
+    monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'out'))
+    result = app.refresh(make_config(world, jar), force=True)
+    assert result['stats']['blocks'] == 1

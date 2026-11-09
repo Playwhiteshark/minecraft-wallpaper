@@ -282,9 +282,25 @@ def unpack_palette(values, palette_length: int, data_version: int, count: int = 
 
 
 def block_name(state):
-    if isinstance(state, str):
+    """Decode legacy and Java 26.3 block palette variants."""
+    if isinstance(state, str) and state:
         return state
-    return str(state.get('Name') or state.get('id') or 'minecraft:air')
+    if isinstance(state, dict):
+        name = state.get('Name') or state.get('id') or state.get('')
+        if isinstance(name, str) and name:
+            return name
+    # Unknown entries are not air: silently discarding them would lose builds.
+    raise WorldFormatError('Unrecognised block-state palette entry')
+
+
+def block_properties(state):
+    """Accept both legacy Properties and Java 26.3 properties."""
+    if not isinstance(state, dict):
+        return {}
+    value = state.get('Properties')
+    if value is None:
+        value = state.get('properties')
+    return value if isinstance(value, dict) else {}
 
 
 def iterate_blocks(chunk, cx: int, cz: int, version: int, bounds):
@@ -299,7 +315,7 @@ def iterate_blocks(chunk, cx: int, cz: int, version: int, bounds):
         palette = states.get('palette') or states.get('Palette') or []
         if not palette:
             continue
-        indexes = unpack_palette(states.get('data') or states.get('BlockStates') or [], len(palette), version)
+        indexes = unpack_palette(states.get('data') or states.get('BlockStates') or [], len(palette), int(chunk.get('DataVersion', version)))
         for index, palette_index in enumerate(indexes):
             state = palette[palette_index]
             name = block_name(state)
