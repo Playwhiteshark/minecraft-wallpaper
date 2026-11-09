@@ -17,7 +17,7 @@
   document.body.classList.add(scene.light === 'night' ? 'night' : scene.light === 'day' ? 'day' : 'golden');
   if (new URLSearchParams(location.search).has('preview')) document.body.classList.add('preview');
   document.getElementById('world-title').textContent = scene.name || 'Minecraft Living World';
-  document.getElementById('location-title').textContent = `${scene.dimension || 'overworld'}  ·  ${(scene.stats || {}).blocks || 0} blocks  ·  ${(scene.entities || []).length} animals`;
+  document.getElementById('location-title').textContent = `${scene.dimension || 'overworld'}  ·  ${(scene.stats || {}).blocks || 0} blocks  ·  ${(scene.stats || {}).faces || 0} faces  ·  ${(scene.entities || []).length} animals`;
 
   // Camera math: column-major matrices, no 3D runtime dependencies.
   const rad = d => d * Math.PI / 180;
@@ -173,7 +173,7 @@
     gl.enableVertexAttribArray(3);gl.vertexAttribPointer(3,3,gl.UNSIGNED_BYTE,true,stride,10);gl.vertexAttribDivisor(3,1);
     gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,1,gl.UNSIGNED_BYTE,false,stride,13);gl.vertexAttribDivisor(4,1);
     gl.bindVertexArray(null);
-    return { vao, count:bytes.length/stride };
+    return { vao, count:bytes.length/stride, bytes };
   }
 
   // Deliberately low-polygon, recognisable resident models, not game meshes.
@@ -324,10 +324,57 @@
     });
   }
 
+  // Derive a scenic camera target from visible block surfaces, not the
+  // player's last saved Y. The player may have been flying above the base.
+  // This uses only already generated face data; no additional world scan.
+  function terrainFocus(meshes) {
+    const close=[],wide=[];
+    const inner=Math.max(8,Math.min(16,Number(scene.radius||24)*.55));
+    for(const mesh of meshes){
+      const view=new DataView(mesh.bytes.buffer,mesh.bytes.byteOffset,mesh.bytes.byteLength);
+      for(let i=0;i<mesh.count;i++){
+        const offset=i*16,face=view.getUint8(offset+6);
+        if(face!==5)continue;
+        const x=view.getInt16(offset,true),y=view.getInt16(offset+2,true),z=view.getInt16(offset+4,true);
+        wide.push(y);
+        if(Math.abs(x)<=inner && Math.abs(z)<=inner)close.push(y);
+      }
+    }
+    const heights=close.length>=8?close:wide;
+    if(!heights.length)return [0,1.5,0];
+    heights.sort((a,b)=>a-b);
+    const h=heights[Math.floor(heights.length*.55)];
+    return [0,Math.max(-256,Math.min(256,h+1.5)),0];
+  }
+  const surfaceFocus=terrainFocus([opaque,alpha]);
+  // The eventual saved-shot system can supply an explicit 3D camera target.
+  const pY=(scene.entities||[]).map(e=>Number(e.pos?.[1])-Number(scene.origin?.[1]))
+    .filter(Number.isFinite).sort((a,b)=>a-b);
+  const explicitTarget=scene.camera?.target;
+  const hasTarget=Array.isArray(explicitTarget)&&explicitTarget.length===3&&explicitTarget.every(Number.isFinite);
+  const firstFocus=hasTarget?explicitTarget.slice():surfaceFocus.slice();
   const initialYaw=rad(Number(scene.camera?.yaw||42));
   const initialPitch=rad(Number(scene.camera?.pitch||22));
   let yaw=initialYaw,pitch=initialPitch,mouseX=0,mouseY=0,motion=true,paused=false;
   let distance=Math.max(4,Number(scene.camera?.distance||Math.max(14,scene.radius*2.2)));
+  if(!hasTarget && pY.length){
+    const bottom=Math.min(surfaceFocus[1]-2,pY[0]-1);
+    const top=Math.max(surfaceFocus[1]+3,pY[pY.length-1]+4);
+    firstFocus[1]=(bottom+top)/2;
+    // Fit the base and its saved residents into a single practical shot.
+    const r=Math.max(4,Number(scene.radius||24));
+    const halfSpan=(top-bottom)/2;
+    const cp=Math.abs(Math.cos(initialPitch)),sp=Math.abs(Math.sin(initialPitch));
+    const vHalf=halfSpan*cp+r*.85*sp;
+    const depthHalf=halfSpan*sp+r*.85*cp;
+    const aspect=Math.max(1,canvas.clientWidth/Math.max(1,canvas.clientHeight));
+    const required=Math.max(vHalf/Math.tan(rad(30)),r/(Math.tan(rad(30))*aspect))+depthHalf;
+    distance=Math.max(distance,required*1.12);
+  }
+  // Leave the decoded buffers to the GPU rather than retaining a second
+  // CPU copy just for the one-time camera fit.
+  delete opaque.bytes;delete alpha.bytes;
+  const initialDistance=distance;
   let lastDraw=0,frameQueued=false,atlas=null;
   let dragging=false,dragX=0,dragY=0;
   const start=performance.now();
@@ -342,8 +389,8 @@
     const elapsed=(now-start)/1000;
     const pan=motion ? Math.sin(elapsed*.045)*rad(.65):0;
     const yy=yaw+pan+mouseX*.055,pp=Math.max(-.26,Math.min(1.35,pitch-mouseY*.033));
-    const focus=[0,1.5,0];
-    const eye=[Math.sin(yy)*Math.cos(pp)*distance,Math.sin(pp)*distance+1.5,Math.cos(yy)*Math.cos(pp)*distance];
+    const focus=firstFocus;
+    const eye=[focus[0]+Math.sin(yy)*Math.cos(pp)*distance,focus[1]+Math.sin(pp)*distance,focus[2]+Math.cos(yy)*Math.cos(pp)*distance];
     const mvp=mul(perspective(rad(60),w/h,.1,Math.max(250,distance*8)),lookAt(eye,focus));
     commonUniforms(terrain,mvp,eye,elapsed);
     gl.uniform1f(gl.getUniformLocation(terrain,'uCols'),atlas.cols);
@@ -351,6 +398,7 @@
     gl.uniform1i(gl.getUniformLocation(terrain,'uAtlas'),0);
     gl.uniform1i(gl.getUniformLocation(terrain,'uTransparent'),0);
     gl.bindVertexArray(opaque.vao);gl.drawArraysInstanced(gl.TRIANGLES,0,6,opaque.count);
+    if(gl.getError()!==gl.NO_ERROR){paused=true;return fail('Terrain drawing failed in WebGL. Try a smaller radius or report the browser/GPU and displayed face count.');}
     commonUniforms(pets,mvp,eye,elapsed);
     gl.bindVertexArray(petMesh.vao);gl.drawArrays(gl.TRIANGLES,0,petMesh.count);
     if(alpha.count){
@@ -379,7 +427,7 @@
   const turn=d=>{yaw+=d;request();};
   document.getElementById('left').onclick=()=>turn(-rad(15));
   document.getElementById('right').onclick=()=>turn(rad(15));
-  document.getElementById('reset').onclick=()=>{yaw=initialYaw;pitch=initialPitch;mouseX=mouseY=0;request();};
+  document.getElementById('reset').onclick=()=>{yaw=initialYaw;pitch=initialPitch;distance=initialDistance;mouseX=mouseY=0;request();};
   const motionButton=document.getElementById('motion');
   motionButton.onclick=()=>{motion=!motion;motionButton.textContent=motion?'❚❚':'▶';request();};
   document.addEventListener('visibilitychange',()=>{paused=document.hidden;if(!paused)request();});
@@ -388,5 +436,6 @@
   window.addEventListener('resize',request);
   // Wallpaper is capped at 10fps while gently animated; otherwise it renders on interaction only.
   setInterval(()=>{if(!paused&&!document.hidden&&motion&&(scene.entities?.length || true))request();},100);
-  loadAtlas(scene.tiles||[]).then(a=>{atlas=a;request();}).catch(e=>fail('Texture loading failed: '+e.message));
+  if(!opaque.count&&!alpha.count)fail('The generated scene has zero visible block faces. Check the selected height range and regenerate.');
+  else loadAtlas(scene.tiles||[]).then(a=>{atlas=a;request();}).catch(e=>fail('Texture loading failed: '+e.message));
 })();
