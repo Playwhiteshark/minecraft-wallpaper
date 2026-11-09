@@ -18,7 +18,7 @@ This is an **independent standalone project**, not a submodule or tool of Local 
 - Do not leave Minecraft running or implement a resident game-server/watcher to achieve the wallpaper. Rendering/extraction should occur only in bounded jobs; live wallpaper should use compact scene/video media and pause appropriately.
 - Important resident mobs, scenic quality, small-base framing, POIs and selective updates are actual requirements—not optional details to discard to simplify implementation.
 - Prefer existing tested renderers/converters; never start writing a complete new Minecraft world decoder without comparative evidence in the research document.
-- No automatic system mutations, scheduled jobs, world hook/mod or app install while the project is still in proposal/feasibility state.
+- v0.1 is implemented, not merely proposed. A user-scoped weekly Scheduled Task is created **only after an explicit Weekly refresh click**. Never install silently, run a resident watcher/service, or change Minecraft saves/Lively binaries.
 
 ## Ownership and filesystem lifecycle
 

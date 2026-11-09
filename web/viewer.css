@@ -1,0 +1,23 @@
+:root { color-scheme: dark; font-family: 'Segoe UI', system-ui, sans-serif; }
+* { box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; }
+body { background:radial-gradient(ellipse at 62% 40%, #b7b6a1 0%, #6284a0 48%, #192a3b 100%); }
+body.day { background:radial-gradient(ellipse at 57% 24%, #d2d9ce 0%, #84bbd2 42%, #324f78 100%); }
+body.night { background:radial-gradient(ellipse at 58% 32%, #31475e 0%, #18273e 43%, #08101e 100%); }
+#world { position:absolute; inset:0; width:100%; height:100%; display:block; outline:none; }
+#vignette { position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(ellipse at 52% 48%, transparent 46%,rgba(6,12,22,.16) 75%,rgba(2,5,12,.46) 100%); }
+#label {position:absolute; left:24px; bottom:22px; padding:8px 14px; border-radius:12px;
+  background:rgba(8,18,31,.34); backdrop-filter:blur(9px); color:#f6f7ed;
+  box-shadow:0 1px 14px rgba(0,0,0,.12); pointer-events:none; opacity:.78;
+  font-size:13px; font-weight:600; letter-spacing:.02em; }
+#label small { display:block; font-size:11px; margin-top:2px; font-weight:400; color:#d1dfeb; }
+#controls { position:absolute; bottom:24px; right:24px; display:flex; gap:6px;
+  opacity:0; transition:opacity .2s; }
+body:hover #controls, body.preview #controls {opacity:.9;}
+button {width:38px;height:38px;border-radius:11px;border:1px solid rgba(255,255,255,.22);
+ background:rgba(13,24,35,.56);color:white;cursor:pointer;backdrop-filter:blur(8px);font-size:18px;}
+button:hover {background:rgba(65,99,124,.75);} button:focus-visible {outline:2px solid #fff;}
+#error {position:absolute;top:20px;left:20px;right:20px;max-width:700px;padding:14px 18px;
+ background:#531c23;color:#fff;border:1px solid #ef8793;border-radius:12px;font-size:13px;white-space:pre-wrap;}
+@media (max-width:700px) {#label {left:12px;bottom:12px} #controls {right:12px;bottom:12px}}
