@@ -84,7 +84,10 @@
       if(aShape>2.5) p.y=p.y*.063;
       vPos=aBlock+p;vNormal=n;vTint=aTint;
       vec2 tile=vec2(mod(aTile,uCols),floor(aTile/uCols));
-      vUv=(tile+(vec2(2.)+uv*vec2(32.))/36.)/uCols;
+      // Canvas uploads are NOT flipped: atlas row 0 must remain texture row 0.
+      // Flip only the UV within each tile so block faces stay upright, and
+      // sample texel centres to avoid sampling the transparent 2px gutter.
+      vUv=(tile*36.+vec2(2.5+uv.x*31.,2.5+(1.-uv.y)*31.))/(36.*uCols);
       gl_Position=uMVP*vec4(vPos,1.);
     }`;
   const lighting = `
@@ -313,7 +316,10 @@
     }));
     return Promise.all(loads).then(()=>{
       const tx=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tx);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+      // Do not flip the entire atlas: only its first rows contain tiles when
+      // the texture count is not a full square. Flipping turns every block
+      // transparent for e.g. 31 textures in an 8x8 atlas.
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
       gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,off);
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
