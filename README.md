@@ -8,7 +8,7 @@ A small **working starter** for Windows: transform a bounded part of a Minecraft
 
 Requires **Windows, Python 3.10+ with Tkinter**, Minecraft Java Edition 1.18+ save data, a modern browser with WebGL2, and the Lively version you already use. No pip install, Node, Java server, game mod, npm dependencies, external map software, or new background service is required for this starter.
 
-1. Keep Minecraft **closed**. Extract this repository somewhere you want to keep its source (preferably `%USERPROFILE%\CODING STUFF\minecraft-wallpaper`).
+1. Keep Minecraft **closed**. Clone this repository into a permanent project folder (for example `%USERPROFILE%\CODING STUFF\minecraft-wallpaper`) and update it from `main` with `git pull --ff-only`.
 2. Double-click **`Launch.cmd`**, or run `py -3 app.py` from PowerShell.
 3. Choose your world from the drop-down or **Browse world** (the selected folder must contain `level.dat`). CurseForge/custom-launcher worlds can be selected by folder.
 4. Use **player position** or **world spawn** as a starting point, then enter the *actual X/Y/Z of your base*. Set a radius (start at 16–24), lighting, and **Auto-frame** distance.
@@ -16,7 +16,18 @@ Requires **Windows, Python 3.10+ with Tkinter**, Minecraft Java Edition 1.18+ sa
 6. Click **Refresh scene**, then **Open 3D preview**. Move the mouse for parallax; in browser preview, drag to orbit and scroll to zoom. Try adjusting yaw, pitch, or radius if the base is not visible.
 7. For Lively, open **Open wallpaper folder** and import its **`index.html`** using Lively's standard Add Wallpaper UI. In Lively's library, locate the imported project folder. Back in the control panel, click **Connect Lively copy** and select that project folder. This opt-in action authorizes updates only to the marked `scene-data.js` file in that particular imported project. A future Refresh updates that file and requests a Lively web-wallpaper reload. If the import is linked rather than copied, the generated output itself may already be the active source.
 
-Lively's exact project import and page reload behavior **must be verified on your machine**. We neither install another Lively copy nor modify its binaries, registry entries, or your existing Desktop Picture patch.
+Lively's exact project import and page reload behavior **must be verified on your machine**. This program neither installs Lively nor modifies its binaries, registry entries, or unrelated wallpaper customizations.
+
+## First-run verification
+
+1. Install or verify Python 3.10+ with Tkinter and Git for Windows. From a PowerShell terminal in this clone run `py -3 --version`, then `.\Launch.cmd`. No `pip install` is required to use the app.
+2. Close Minecraft entirely. In the control panel choose a Java world, select the correct dimension and use player/spawn location as a **starting** position; overwrite X/Y/Z with the real centre of your base if different.
+3. Set radius **16–24** initially, select **golden** or **day** lighting, and choose **Auto-frame**. If you have an installed Minecraft version JAR, optionally select it to enable familiar textures.
+4. Click **Refresh scene**. The status should report a nonzero block/face count for an occupied area. Click **Open 3D preview**. Check the ground/builds, mouse parallax, drag orbit and wheel zoom; adjust Y/camera pitch or radius if the camera points away from the build.
+5. Import the generated `wallpaper/index.html` into Lively only after the preview works. If Lively copies the files into its own project folder, use **Connect Lively copy** to select that imported project, then click Refresh again and **Reload Lively**.
+6. Before enabling any scheduler, test one safe refresh: close Minecraft, make a visible world change in-game, save and exit, return to the app and click **Refresh scene**. Verify the displayed scene changes and the original save still works. The separate **Weekly refresh** button is optional and not required for basic testing.
+
+**If anything fails:** copy the error text/status and report which step, game version, dimension, X/Y/Z, radius and texture-JAR choice were used. Do not upload the world save or private coordinates into public GitHub issues. Test in the browser before troubleshooting Lively; the two failure modes are different.
 
 ## What the first version does
 
@@ -55,7 +66,7 @@ py -3 app.py --preview       # open previously generated scene
 
 Source files are public. **Do not commit `config.json`, Minecraft saves, generated scenes, entity coordinates/UUIDs, client assets or screenshots exposing private locations.** The `.gitignore` excludes common generated paths.
 
-## Development / verification
+## Testing and verification
 
 ```bash
 python -m pytest -q         # developer/CI-only pytest dependency
@@ -68,5 +79,4 @@ The synthetic fixture tests assert: block palette decoding, valid world and enti
 
 - [Product requirements](docs/PRODUCT-SPEC.md)
 - [Technical research / reuse options](docs/RESEARCH.md)
-- [Roadmap and next iteration gates](docs/IMPLEMENTATION-PLAN.md)
 - [GitHub issue tracker](https://github.com/Playwhiteshark/minecraft-wallpaper/issues)

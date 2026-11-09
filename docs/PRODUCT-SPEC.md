@@ -1,6 +1,6 @@
 # Product specification — Minecraft Living World Wallpaper
 
-**Status:** v0.1 minimal full-pipeline starter implemented (see README); actual-world/Lively compatibility, shaderpack equivalence, authentic animal meshes and complete camera tours remain unverified/unimplemented. **Last research review:** 2026-11-09. **Owner:** this standalone repository, not Desktop Tools or personal-ops.
+**Status:** v0.1 minimal end-to-end prototype (see README); real-world/Lively compatibility, shaderpack equivalence, authentic animal models and complete camera tours remain unverified. **Last research review:** 2026-11-09.
 
 ## Overall objective
 
@@ -60,7 +60,7 @@ An evolving home base should become a **curated network of architectural spaces*
 
 **Small interaction scope:** mouse movement gives subtle physical parallax; a direct click/gesture may select the next shot/POI or pause an idle camera movement. Do not build first-person controls, a game-style navigation system, pathfinding or room editor merely to obtain a wallpaper tour. Avoid interactions that require the user to focus the desktop or fight with desktop icons.
 
-This network is a **future capability**. P0 and P1 should implement one excellent camera and the geometry constraints needed for later interiors, not a whole camera planner or discovery algorithm.
+This network is a **future capability**. The current prototype supports selected camera shots, not a full interior tour or automatic camera-planning algorithm.
 
 ## Functional requirements
 

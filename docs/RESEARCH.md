@@ -60,7 +60,7 @@ A possible solution is a separate tiny **entity-overlay** stage: read selected e
 
 A **pre-rendered video** is frequently simple to show and can be hardware-decoded, but an MP4 is fundamentally a flat image sequence and cannot recreate true geometry from mouse parallax. It must be re-rendered when the actual base changes; Replay Mod is a capture tool rather than a guaranteed unattended world-to-video pipeline. We should keep video as a quality/fidelity fallback instead of assuming it is the easiest *automated* option.
 
-There is an existing user-specific Lively **Desktop Picture persistence** compatibility patch, with independent recovery/health documentation in the private [personal-ops customization record](https://github.com/Playwhiteshark/personal-ops/tree/main/customizations/lively-desktop-picture). **Do not reapply, replace or modify the patched Lively DLL as part of this project.** Verify static fallback and virtual-desktop switching as a compatibility test only.
+Some Lively installations include separate desktop wallpaper persistence customizations. **Do not reapply, replace or modify Lively DLLs as part of this project.** Verify static fallback and virtual-desktop switching only as compatibility checks.
 
 ### Geometry and the user's occlusion insight
 
