@@ -152,11 +152,18 @@
   const petFS = `#version 300 es
     precision highp float;
     in vec3 vPos;in vec3 vNormal;in vec3 vColor;
+    uniform float uHorizonRadius;
     ${lighting}
     out vec4 frag;
     void main(){
       vec3 color=doFog(grade(shade(vColor,vPos,vNormal)),vPos);
-      frag=vec4(color,1.);
+      float alpha=1.;
+      if(uHorizonRadius>0.){
+        float edge=max(abs(vPos.x),abs(vPos.z));
+        alpha=1.-smoothstep(uHorizonRadius*.78,uHorizonRadius,edge);
+        if(alpha<.015)discard;
+      }
+      frag=vec4(color,alpha);
     }`;
 
   function fromB64(input){
@@ -332,7 +339,7 @@
       const v=lights[i];flat[i*3]=v[0]-scene.origin[0];flat[i*3+1]=v[1]-scene.origin[1];flat[i*3+2]=v[2]-scene.origin[2];
     }
     gl.uniform3fv(m('uLampPos[0]'),flat);
-    if(prog===pets)gl.uniform1f(m('uTime'),time);
+    if(prog===pets){gl.uniform1f(m('uTime'),time);gl.uniform1f(m('uHorizonRadius'),0.);}
   }
 
   function loadAtlas(tiles){
@@ -438,8 +445,11 @@
     const mvp=mul(perspective(rad(60),w/h,.1,Math.max(250,distance*8)),lookAt(eye,focus));
     if(landscapeMesh.count){
       commonUniforms(pets,mvp,eye,elapsed);
+      gl.uniform1f(gl.getUniformLocation(pets,'uHorizonRadius'),Number(scene.landscape.radius));
+      gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
       gl.bindVertexArray(landscapeMesh.vao);
       gl.drawArrays(gl.TRIANGLES,0,landscapeMesh.count);
+      gl.depthMask(true);gl.disable(gl.BLEND);
     }
     commonUniforms(terrain,mvp,eye,elapsed);
     gl.uniform1f(gl.getUniformLocation(terrain,'uCols'),atlas.cols);
