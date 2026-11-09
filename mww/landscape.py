@@ -113,7 +113,22 @@ def build_landscape(dim: Path, centre, near_radius: int, radius: int = 128, step
                 rgb = color_for(block) if block and color_for else (112, 149, 115)
                 samples[n] = SAMPLE.pack(int(y - centre[1]), *rgb)
                 present += 1
+    # Only hide the artificial outer cube walls if the entire ring
+    # connecting near blocks to this coarse surface is available.
+    joinable = True
+    for iz in range(side):
+        for ix in range(side):
+            dx = abs(x0 + ix * step - centre[0])
+            dz = abs(z0 + iz * step - centre[2])
+            edge = max(dx, dz)
+            if near_radius - step <= edge <= near_radius + step:
+                if SAMPLE.unpack(samples[iz * side + ix])[0] == MISSING:
+                    joinable = False
+                    break
+        if not joinable:
+            break
     return {
+        'joinable': joinable,
         'version': 1,
         'step': step,
         'radius': radius,
