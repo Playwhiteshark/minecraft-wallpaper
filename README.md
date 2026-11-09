@@ -10,7 +10,9 @@ The goal is to turn selected areas of a saved Minecraft world into an atmospheri
 
 - [Product specification](docs/PRODUCT-SPEC.md) — goal, user experience, scope, constraints, success criteria, architecture and pending decisions.
 - [Existing software and technology research](docs/RESEARCH.md) — BlueMap, Vantage, Worldlens, pet/entity rendering, Lively, game-as-wallpaper mods, trade-offs and feasibility questions.
-- [Feasibility issue #1](https://github.com/Playwhiteshark/minecraft-wallpaper/issues/1) — experiments and decisions needed before implementation.
+- [Implementation plan](docs/IMPLEMENTATION-PLAN.md) — one canonical data flow, lean source layout, P0–P5 gates, testing and Copilot delegation.
+- [Feasibility issue #1](https://github.com/Playwhiteshark/minecraft-wallpaper/issues/1) — umbrella acceptance decisions.
+- [P0 implementation issue #2](https://github.com/Playwhiteshark/minecraft-wallpaper/issues/2) — small, optional Copilot-ready offline Lively proof; not assigned.
 
 ## Core distinction
 
