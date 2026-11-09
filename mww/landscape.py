@@ -30,13 +30,19 @@ def _surface_heights(chunk):
     sections = root.get('sections') or root.get('Sections') or []
     if not sections:
         return None
+    # Minecraft heightmaps encode their elevation relative to chunk.yPos,
+    # NOT the lowest block section that happened to be serialised. Newer
+    # formats can omit empty sections, including sections below the terrain.
+    # Infer packed width from the actual long count rather than from sections.
     section_ys = [int(s.get('Y', 0)) for s in sections]
-    min_y = min(section_ys) * 16
-    world_height = (max(section_ys) - min(section_ys) + 1) * 16
-    bits = max(1, world_height.bit_length())
-    per_long = 64 // bits
-    if len(values) < math.ceil(256 / per_long):
+    y_pos = root.get('yPos', root.get('YPos'))
+    min_y = (int(y_pos) if y_pos is not None else min(section_ys)) * 16
+    widths = [width for width in range(1, 17)
+              if math.ceil(256 / (64 // width)) == len(values)]
+    if len(widths) != 1:
         return None
+    bits = widths[0]
+    per_long = 64 // bits
     mask = (1 << bits) - 1
     result = []
     for k in range(256):
