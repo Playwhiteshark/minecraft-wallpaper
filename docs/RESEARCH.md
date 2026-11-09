@@ -102,3 +102,55 @@ Strictly storing *only the currently visible faces* is incompatible with a camer
 - Rejected: writing our own full map renderer merely because the project has a new name.
 
 *Research reflects documentation available as of 2026-11-09, not a completed technical evaluation or hardware benchmark.*
+
+
+## Research update — 2026-11-09: lean reuse is feasible, avoid full applications
+
+**Recommendation (conditional on testing):** Keep the standalone **minecraft-wallpaper** repository, but build only the custom wallpaper scene, world/POI selection, entity overlay and safe batch refresher. **Do not** reimplement a general Minecraft world reader/mesher, install full Worldlens or run Minecraft/Java/server continuously. Prefer a small existing conversion binary used only at refresh time and a bundled static Three.js Lively wallpaper at display time.
+
+### Strongest reuse case: Vantage packages
+
+Vantage explicitly publishes a split viewer architecture: a **zero-dependency tile decoder** `@thoughts-on-things/vantage-mc/core`, a **framework-agnostic Three.js renderer** `@thoughts-on-things/vantage-mc/three`, and optional React components. The documented API allows generating one textured tile, calling `buildTerrain()` on the parsed Vantage tile/texture data, and adding `terrain` and `water` directly to our own Three.js scene. A broader `TileManager` supports bounded tile residency, byte limits, distance-based priorities and cache eviction. This is **direct composability**, not merely code we could copy by reverse-engineering.
+
+The viewer is documented as **render-on-demand**, drawing for camera/input/data changes plus about **10 fps when animated water/lava textures are visible**, rather than needing a constant high-FPS redraw loop. This is promising for parallax, but the actual Lively/browser process cost must be measured.
+
+- [Vantage web package and vanilla JS API](https://github.com/thoughts-on-things/vantage-mc/blob/main/web/README.md)
+- [Vantage memory-bounded streaming architecture](https://github.com/thoughts-on-things/vantage-mc/blob/main/docs/streaming.md)
+- [Vantage source (MIT)](https://github.com/thoughts-on-things/vantage-mc)
+- [Vantage CLI and single-binary usage](https://vantage.beacon-mc.io/)
+
+Vantage is a **young and relatively little-used repository**; this is a strong architectural fit, *not* a claim of proven correctness or security. Pin a reviewed source commit, review the binary/build chain and use isolated CI builds rather than silently running unknown prebuilt downloads. We have **not measured the Windows CLI binary size**, scene assets or performance. The desktop wrapper, local server, React UI, multiplayer services, server plugins and developer toolchains are **not runtime dependencies we should adopt** unless proven necessary.
+
+### BlueMap fallback: small CLI, possibly larger prerequisites
+
+BlueMap v5.29's standalone CLI jar is approximately **7.3 MB** and its webapp zip approximately **1.5 MB** according to the published release file listing. Its GitHub release describes support for **Minecraft Java 1.13.2–26.3** for the CLI and identifies **Java 25** as its current release target; older wiki installation text still says Java 21. Therefore check actual installed JRE compatibility before using it; do **not** install another Java runtime solely on the assumption the jar itself is tiny.
+
+BlueMap's actual output, world assets, Java runtime (if absent), and map database/tiles may dominate its footprint. Avoid a resident BlueMap webserver. BlueMap 5.29 improves changed-region detection and transactional map writes, but those updates alone are not a complete safe wallpaper refresh pipeline.
+
+- [BlueMap v5.29 release and compatibility](https://github.com/BlueMap-Minecraft/BlueMap/releases/tag/v5.29)
+- [BlueMap v5.29 CLI file-size listing](https://sourceforge.net/projects/bluemap.mirror/files/v5.29/) (third-party exact mirror, corroborated by GitHub's release listing)
+- [BlueMap CLI docs](https://github.com/BlueMap-Minecraft/BlueMapWiki/blob/master/wiki/getting-started/Installation.md)
+
+### Avoid Worldlens as a direct installed dependency
+
+The Worldlens project publicly describes a roughly **692 MiB Windows installer** and working local rendering using a Java BlueMap process, with its independent TypeScript mesher not yet driving actual local product rendering. Its frontend architecture can still be studied selectively under MIT, but **do not install or package its Electron desktop app** for this narrow wallpaper need.
+
+- [Worldlens project site](https://ding-ding-projects.github.io/worldlens/)
+- [Worldlens source and licence](https://github.com/Ding-Ding-Projects/worldlens)
+
+### Pets remain the important exception
+
+BlueMapEntities' README broadly claims vanilla mob support and variants but does not establish the exact **two happy ghasts, horse, wolf/dog and cat** as a verified full offline CLI pipeline. A version-specific supported-model list can be narrower than the README. Nor does Vantage's existing *player models* demonstrate pet-model support. **Do not assume all five pets work without custom integration**. A small local entity NBT extractor + pinned model overlay remains the likely bespoke requirement, with faithful saved-state appearance and a few restrained visual-only idle effects.
+
+### Licence and security constraints
+
+BlueMap, Vantage, Worldlens and BlueMapEntities currently advertise **MIT** licences. Copying/deriving code is allowed with proper notices, but copying every source file or bundling entire packages is not operationally necessary. Reuse APIs or a small reviewed subset, then maintain attribution and a dependency inventory. **Minecraft assets are third-party IP**: preferably load/extract them from the user's existing Minecraft installation, do not commit or publicly distribute copied game textures/models without checking their terms.
+
+The user's concern is not merely source file size: **count all runtime/development/download artifacts** (binary + Java/Node/Zig toolchains + Minecraft resource extraction + generated scene geometry + textures + two-scene atomic update staging + caches). Build-time toolchains should be confined to CI or disposable project build environments, rather than installed globally to run wallpaper updates.
+
+### Practical storage and performance acceptance gate
+
+Before setting numeric limits, measure Vantage static extraction on a bounded actual base region, both cold and changed-block refresh, and test direct local HTML loading in the user's existing Lively. A lightweight architecture should have **no resident Java, Node, Python server, Zig compiler, Electron wrapper, Minecraft game/client or world-mapping daemon**. The display may still use a Lively web-renderer subprocess; that is normal and must be measured, not described as zero cost. Prefer a single owned current scene plus a temporary next-scene staging copy; avoid indefinite old-scene archives. The Minecraft world remains untouched.
+
+**Decision rule:** If a pinned Vantage converter and small Three.js wrapper meet visual, entity and performance requirements, use them. If it does not, test BlueMap CLI; only consider a new renderer after both prove inadequate. Preserve video as a high-quality alternative if it outperforms live geometry in subjective quality or running cost. No software installation or live-world mutation is authorised by this research.
+
