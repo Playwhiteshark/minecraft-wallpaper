@@ -260,11 +260,48 @@
     return {vao,count:array.length/10};
   }
 
-  let terrain, pets, opaque, alpha, petMesh;
+
+  // An independent, versioned low-detail surroundings adapter. The detailed
+  // block renderer remains unchanged; missing saved chunks never get invented.
+  function landscapeGeometry(data, nearRadius){
+    if(!data || data.version!==1 || !(data.present>0))return [];
+    const n=Number(data.size),step=Number(data.step);
+    if(!Number.isInteger(n)||n<2||n>97||![4,8,16].includes(step))throw Error('Invalid landscape grid');
+    const raw=fromB64(data.samples);
+    if(raw.byteLength!==n*n*5)throw Error('Invalid landscape data length');
+    const view=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
+    const points=[];
+    for(let z=0;z<n;z++)for(let x=0;x<n;x++){
+      const index=(z*n+x)*5,y=view.getInt16(index,true);
+      points.push(y===-32768?null:{
+        pos:[data.x0+x*step,y+.06,data.z0+z*step],
+        rgb:[raw[index+2]/255,raw[index+3]/255,raw[index+4]/255]
+      });
+    }
+    const mesh=[];
+    function triangle(a,b,c){
+      if(!a||!b||!c)return;
+      const u=sub(b.pos,a.pos),v=sub(c.pos,a.pos),normal=norm(cross(u,v));
+      if(normal[1]<0)normal.forEach((v,i)=>normal[i]=-v);
+      for(const point of [a,b,c])mesh.push(...point.pos,...normal,...point.rgb,0);
+    }
+    for(let z=0;z<n-1;z++)for(let x=0;x<n-1;x++){
+      const cx=data.x0+(x+.5)*step,cz=data.z0+(z+.5)*step;
+      // Do not put a coarse skin over the detailed base or its interiors.
+      if(Math.abs(cx)<nearRadius&&Math.abs(cz)<nearRadius)continue;
+      const a=points[z*n+x],b=points[z*n+x+1];
+      const c=points[(z+1)*n+x],d=points[(z+1)*n+x+1];
+      triangle(a,c,b);triangle(b,c,d);
+    }
+    return mesh;
+  }
+
+  let terrain, pets, opaque, alpha, petMesh, landscapeMesh;
   try{
     terrain=program(terrainVS,terrainFS);pets=program(petVS,petFS);
     opaque=faceVAO(scene.opaque);alpha=faceVAO(scene.alpha);
     petMesh=petVAO(petGeometry(scene.entities||[],scene.origin||[0,0,0]));
+    landscapeMesh=petVAO(landscapeGeometry(scene.landscape,Number(scene.radius||24)));
   }catch(e){return fail('WebGL scene creation failed: '+e.message);}
   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
   gl.disable(gl.CULL_FACE);
@@ -285,8 +322,9 @@
     gl.uniform3fv(m('uSunDir'),norm(preset.dir));
     gl.uniform3fv(m('uFogColor'),preset.fog);
     const radius=scene.radius||24;
-    gl.uniform1f(m('uFogNear'),Math.max(radius*.7,distance*.75));
-    gl.uniform1f(m('uFogFar'),Math.max(radius*3.1,distance+radius*2.6));
+    const farRadius=Number(scene.landscape?.present>0?scene.landscape.radius:radius);
+    gl.uniform1f(m('uFogNear'),Math.max(radius*.9,distance*.65));
+    gl.uniform1f(m('uFogFar'),Math.max(radius*3.1,farRadius*.90,distance+radius*2.6));
     const lights=(scene.lights||[]).slice(0,8);
     gl.uniform1i(m('uLampCount'),lights.length);
     const flat=new Float32Array(24);
@@ -398,6 +436,11 @@
     const focus=firstFocus;
     const eye=[focus[0]+Math.sin(yy)*Math.cos(pp)*distance,focus[1]+Math.sin(pp)*distance,focus[2]+Math.cos(yy)*Math.cos(pp)*distance];
     const mvp=mul(perspective(rad(60),w/h,.1,Math.max(250,distance*8)),lookAt(eye,focus));
+    if(landscapeMesh.count){
+      commonUniforms(pets,mvp,eye,elapsed);
+      gl.bindVertexArray(landscapeMesh.vao);
+      gl.drawArrays(gl.TRIANGLES,0,landscapeMesh.count);
+    }
     commonUniforms(terrain,mvp,eye,elapsed);
     gl.uniform1f(gl.getUniformLocation(terrain,'uCols'),atlas.cols);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,atlas.tx);
