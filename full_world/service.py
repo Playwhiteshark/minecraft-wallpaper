@@ -16,7 +16,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .backend import ConversionError, backend_path, write_json_atomic
+from .backend import (ConversionError, backend_path, prepare_client_assets,
+                      require_engine, write_json_atomic)
+from mww.scene import check_world_closed
 from .config import state_dir
 
 SERVICE_FILE = "full-world-service.json"
@@ -139,6 +141,117 @@ def start_viewer(render_dir: Path, port: int, root: Path | None = None) -> str:
         encoding="utf-8", errors="replace")[-1000:]
     raise ConversionError("The Vantage viewer did not start:\n" + tail)
 
+
+
+LIVE_DIMENSIONS = frozenset(("overworld", "the_nether", "the_end"))
+
+
+def live_command(binary: Path, world: Path, cache: Path, port: int,
+                 dimension: str, memory_mib: int = 768,
+                 assets: Path | None = None) -> list[str]:
+    """Vantage's native lazy tile producer, not an invented Python mesher.
+
+    Full saved-world coordinates are indexed but only requested tiles are baked.
+    Default cave horizon excludes invisible deep underground geometry. The
+    browser's existing tile manager controls visible-tile GPU residency.
+    """
+    viewer_url(port)
+    if dimension not in LIVE_DIMENSIONS:
+        raise ValueError("Unknown Minecraft dimension")
+    if not 256 <= memory_mib <= 8192:
+        raise ValueError("Live tile memory budget must be 256–8192 MiB")
+    command = [
+        str(binary), "live", str(world), "--out", str(cache),
+        "--host", "127.0.0.1", "--port", str(port),
+        "--dimension", dimension, "--memory", str(memory_mib),
+        "--prebake", "off", "--lod", "on", "--players", "off",
+    ]
+    if assets is not None:
+        command.extend(["--assets", str(assets)])
+    return command
+
+
+def _live_manifest_ready(port: int) -> bool:
+    """The embedded homepage alone isn't proof of a readable Minecraft scene."""
+    try:
+        with urllib.request.urlopen(viewer_url(port) + "manifest.json", timeout=1) as response:
+            manifest = json.loads(response.read(4 * 1024 * 1024))
+        return (isinstance(manifest, dict) and
+                isinstance(manifest.get("tiles"), list) and
+                len(manifest["tiles"]) > 0)
+    except (OSError, ValueError, TypeError, urllib.error.URLError):
+        return False
+
+
+def start_live_viewer(world: Path, world_key: str, dimension: str, port: int,
+                      root: Path | None = None, *, client_jar: Path | None = None,
+                      memory_mib: int = 768, allow_download: bool = False) -> str:
+    """Start the genuine Vantage on-demand renderer for one camera dimension.
+
+    A dimension switch restarts this small native process but preserves the
+    per-dimension cache. No batch conversion or upfront cave geometry required.
+    """
+    root = root or state_dir()
+    world = Path(world).expanduser().resolve()
+    if not (world / "level.dat").is_file():
+        raise ConversionError("Select a Minecraft Java save containing level.dat")
+    if len(world_key) != 24 or any(c not in "0123456789abcdef" for c in world_key):
+        raise ConversionError("Invalid private world identifier")
+    check_world_closed(world)
+    binary = require_engine(root, allow_download=allow_download)
+    assets = prepare_client_assets(binary, client_jar)
+    cache = (root / "full-world" / world_key / "live-cache" / dimension).resolve()
+    cache.mkdir(parents=True, exist_ok=True)
+    address = viewer_url(port)
+    command = live_command(binary, world, cache, port, dimension, memory_mib, assets)
+    record = owned_record(root)
+    if record and _pid_matches(record) and ping(port):
+        if (record.get("mode") == "live" and
+                record.get("world_dir") == str(world) and
+                record.get("dimension") == dimension and
+                record.get("assets") == (str(assets) if assets else "") and
+                record.get("render_dir") == str(cache) and
+                _live_manifest_ready(port)):
+            return address
+
+    if record:
+        if not _pid_matches(record) and ping(port):
+            raise ConversionError("Viewer port belongs to another process; choose a different port")
+        stop_viewer(root)
+        time.sleep(0.2)
+    if ping(port):
+        raise ConversionError("A different Vantage viewer already uses this port")
+
+    log_path = root / "full-world-service.log"
+    root.mkdir(parents=True, exist_ok=True)
+    flags = 0
+    if os.name == "nt":
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+    with log_path.open("ab") as log:
+        process = subprocess.Popen(
+            command, cwd=str(cache), stdin=subprocess.DEVNULL,
+            stdout=log, stderr=subprocess.STDOUT, close_fds=True,
+            creationflags=flags, start_new_session=os.name != "nt")
+    for _ in range(60):
+        if process.poll() is not None:
+            break
+        if ping(port) and _live_manifest_ready(port):
+            write_json_atomic(root / SERVICE_FILE, {
+                "schema": 1, "pid": process.pid, "binary": str(binary.resolve()),
+                "mode": "live", "world_dir": str(world), "render_dir": str(cache),
+                "dimension": dimension, "assets": str(assets) if assets else "",
+                "port": int(port),
+            })
+            return address
+        time.sleep(0.25)
+
+    if process.poll() is None:
+        process.terminate()
+    tail = log_path.read_text(encoding="utf-8", errors="replace")[-3500:]
+    raise ConversionError(
+        "Vantage could not start a usable on-demand scene. "
+        "The world may contain an unsupported chunk format or missing assets. "
+        "Native diagnostics:\\n" + tail)
 
 def startup_script_path() -> Path:
     if os.name != "nt":
