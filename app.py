@@ -7,6 +7,7 @@ optionally its local version jar, an existing browser and Lively Wallpaper.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -97,6 +98,20 @@ def scan_worlds():
     return sorted(result, key=lambda item: item[0].casefold())
 
 
+def world_selection_key(world):
+    """Stable local path identity for per-world mob choices (never a world name).
+
+    Different saves can both be called 'New World'. Their selected UUIDs must
+    not be conflated. A moved checkout is treated as a newly selected location;
+    its old choices remain retained under the original key for recovery.
+    """
+    value = str(world or '').strip()
+    if not value:
+        return ''
+    canonical = os.path.normcase(str(Path(value).expanduser().resolve()))
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
 def output_folder():
     return data_root() / 'wallpaper'
 
@@ -183,6 +198,12 @@ def refresh(config, *, force=False, fetch_models=False):
     if not (0 <= index < len(config['shots'])):
         raise ValueError('Selected shot index is invalid')
     shot = dict(config['shots'][index])
+    per_world = shot.pop('mobs_by_world', None)
+    if isinstance(per_world, dict):
+        shot['mob_ids'] = per_world.get(world_selection_key(world))
+    elif shot.get('mob_world_key') and shot.get('mob_world_key') != world_selection_key(world):
+        shot['mob_ids'] = None
+    shot.pop('mob_world_key', None)
     shot['jar'] = config.get('jar', '')
     shot['model_cache'] = str(data_root() / 'mob-models')
     shot['fetch_models'] = fetch_models
@@ -294,6 +315,7 @@ def gui():
     pets_var=tk.BooleanVar(value=True)
     # Internal identity keys are retained per shot in config, never in scene data.
     mob_selection = [None]
+    mob_scope = [world_selection_key(config.get('world',''))]
     status_var=tk.StringVar(value='Ready. Minecraft must be closed before refreshing.')
     stat_var=tk.StringVar(value='No render yet.')
     busy=[False]
@@ -402,7 +424,16 @@ def gui():
         s=config['shots'][index]
         for k,var in strings.items():var.set(str(s.get(k,128 if k=='landscape_radius' else 96 if k=='mob_radius' else '')))
         pets_var.set(bool(s.get('pets',True)))
-        mob_selection[0] = list(s['mob_ids']) if isinstance(s.get('mob_ids'),list) else None
+        key = world_selection_key(world_var.get())
+        choices = s.get('mobs_by_world')
+        if isinstance(choices,dict):
+            active = choices.get(key)
+        elif not s.get('mob_world_key') or s.get('mob_world_key') == key:
+            active = s.get('mob_ids')
+        else:
+            active = None
+        mob_selection[0] = list(active) if isinstance(active,list) else None
+        mob_scope[0] = key
         selected.set(index)
 
     def refresh_list():
@@ -416,7 +447,14 @@ def gui():
 
     def read_shot():
         s={k:v.get().strip() for k,v in strings.items()}
-        s['mob_ids'] = None if mob_selection[0] is None else list(mob_selection[0])
+        current_key = world_selection_key(world_var.get())
+        existing = config['shots'][selected.get()]
+        all_choices = dict(existing.get('mobs_by_world') or {})
+        if mob_scope[0] == current_key:
+            all_choices[current_key] = None if mob_selection[0] is None else list(mob_selection[0])
+        s['mobs_by_world'] = all_choices
+        s['mob_ids'] = all_choices.get(current_key)
+        s['mob_world_key'] = current_key
         if not s['name']:raise ValueError('Shot needs a name')
         for k in ('x','y','z','radius','landscape_radius','mob_radius','below','above'):
             s[k]=int(s[k])
@@ -513,6 +551,7 @@ def gui():
                     if keep_missing[0]:
                         chosen.extend(sorted(missing_keys))
                     mob_selection[0]=list(dict.fromkeys(chosen))
+                    mob_scope[0]=world_selection_key(world_var.get())
                     pets_var.set(True)
                     config['shots'][selected.get()]=read_shot()
                     save_config(config)
@@ -520,6 +559,7 @@ def gui():
                     dialog.destroy()
                 def use_automatic():
                     mob_selection[0]=None
+                    mob_scope[0]=world_selection_key(world_var.get())
                     config['shots'][selected.get()]=read_shot()
                     save_config(config)
                     status_var.set('Using automatic nearby-mob selection for this shot.')
