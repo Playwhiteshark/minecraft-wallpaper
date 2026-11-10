@@ -55,7 +55,7 @@ def verified_owned_listener(root: Path, port: int, candidate: dict) -> int | Non
         cache = Path(output).resolve()
         relative = cache.relative_to(Path(root).resolve() / "full-world")
         # Our live cache is full-world/<world_key>/live-cache/vantage-*/<dim>.
-        if len(relative.parts) < 5 or relative.parts[1] != "live-cache":
+        if len(relative.parts) != 4 or relative.parts[1] != "live-cache":
             return None
         if not re.fullmatch(r"[a-f0-9]{24}", relative.parts[0]):
             return None
@@ -85,7 +85,7 @@ def listening_owned_pid(root: Path, port: int) -> int | None:
         "Select-Object -First 1;"
         "if($c){"
         "$p=Get-CimInstance Win32_Process -Filter "
-        "'ProcessId=' + [string]$c.OwningProcess;"
+        "('ProcessId=' + [string]$c.OwningProcess);"
         "if($p){[pscustomobject]@{"
         "pid=$p.ProcessId;binary=$p.ExecutablePath;"
         "command_line=$p.CommandLine} | ConvertTo-Json -Compress}}"
