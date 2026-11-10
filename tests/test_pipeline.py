@@ -485,3 +485,70 @@ def test_same_display_name_worlds_do_not_share_mob_choices(tmp_path, monkeypatch
     assert data['entities']==[]
     assert cfg['shots'][0]['mobs_by_world'][key1]==[selected]
 
+
+
+def test_harness_slot_is_read_from_actual_saved_equipment():
+    from mww.entities import _record
+    bounds=(0,30,None,None,0,30)
+    base={'id':'minecraft:happy_ghast','UUID':[1,2,3,4],
+          'Pos':[8.0,115.0,8.0]}
+    assert _record(base,bounds,scan_all_heights=True)['harness'] is None
+    equipped=dict(base,equipment={'body':{'id':'minecraft:blue_harness','count':1}})
+    assert _record(equipped,bounds,scan_all_heights=True)['harness']=='blue'
+    ignored=dict(base,equipment={'head':{'id':'minecraft:red_harness'}})
+    assert _record(ignored,bounds,scan_all_heights=True)['harness'] is None
+    unknown=dict(base,equipment={'body':{'id':'othermod:purple_harness'}})
+    assert _record(unknown,bounds,scan_all_heights=True)['harness'] is None
+
+
+def test_named_creature_search_uses_saved_chunk_index_outside_base(tmp_path):
+    from mww.entities import find_named_mobs, scan_world_mobs
+    world,jar=make_world(tmp_path)
+    far=root([('Entities',9,(10, [[
+        ('id',8,'minecraft:cat'),('CustomName',8,'{"text":"Jeremy Bentham"}'),
+        ('UUID',11,[123,0,0,0]),
+        ('Pos',9,(6,[520.,80.,8.])),
+    ]])),('Position',11,[32,0])])
+    region(world/'entities'/'r.1.0.mca',far)
+    assert all(m['name']!='Jeremy Bentham'
+               for m in scan_world_mobs(world,'overworld',(7,82,7),96))
+    matches=find_named_mobs(world,'overworld','jeremy bentham')
+    assert len(matches)==1
+    assert matches[0]['name']=='Jeremy Bentham'
+    assert matches[0]['pos']==[520.0,80.0,8.0]
+    assert matches[0]['type']=='cat'
+    assert find_named_mobs(world,'overworld','nonexistent name')==[]
+
+
+def test_harness_assets_use_vanilla_model_and_local_equipment_texture(tmp_path):
+    from mww.mob_assets import build_entity_assets, MODEL_VERSION
+    cache=tmp_path/'cache'/MODEL_VERSION
+    cache.mkdir(parents=True)
+    def model(kind):
+        return {'id':'minecraft:'+kind,'layers':{'main':{
+            'texture':[64,64], 'root':{
+                'pose':{'offset':[0,0,0],'rotation':[0,0,0]},
+                'cubes':[{'origin':[-4,0,-4],'size':[8,8,8],'uv':[0,0]}],
+                'children':{}
+            },
+            **({'textureLocation':'minecraft:textures/entity/ghast/happy_ghast.png'}
+               if kind=='happy_ghast' else {})
+        }},'transform':[]}
+    for name in ('happy_ghast','happy_ghast_harness'):
+        (cache/(name+'.json')).write_text(json.dumps(model(name)),encoding='utf-8')
+    jar=tmp_path/'minecraft.jar'
+    with zipfile.ZipFile(jar,'w') as z:
+        for name in ('ghast/happy_ghast.png','equipment/happy_ghast_body/blue_harness.png'):
+            z.writestr('assets/minecraft/textures/entity/'+name,fake_png())
+    entity={'type':'happy_ghast','pos':[8,115,8],'harness':'blue',
+            'tame':'unknown','baby':False}
+    pack,warnings=build_entity_assets([entity],tmp_path/'cache',jar,fetch_missing=False)
+    assert warnings==[]
+    assert 'happy_ghast_harness' in pack['models']
+    assert entity['passes']==[{
+        'model':'happy_ghast_harness','layer':'main',
+        'texture':'minecraft:textures/entity/equipment/happy_ghast_body/blue_harness.png'
+    }]
+    assert len(pack['textures'])==2
+    assert entity['texture']=='minecraft:textures/entity/ghast/happy_ghast.png'
+
