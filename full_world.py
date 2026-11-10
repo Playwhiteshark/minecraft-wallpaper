@@ -23,7 +23,7 @@ def main(argv=None) -> int:
         description="Stream actual saved-world chunks on demand with Vantage and Lively.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--build", action="store_true", help="Optional offline export of all saved chunks")
-    group.add_argument("--serve", action="store_true", help="Start the saved render's local viewer")
+    group.add_argument("--serve", action="store_true", help="Start the saved world's on-demand native viewer")
     group.add_argument("--stop", action="store_true", help="Stop only the viewer owned by this app")
     group.add_argument("--status", action="store_true", help="Print registered render and viewer status")
     group.add_argument("--open", action="store_true", help="Start viewer and open in browser")
@@ -31,7 +31,7 @@ def main(argv=None) -> int:
     parser.add_argument("--jar", type=Path, help="Optional installed Minecraft client JAR")
     parser.add_argument("--caves-full", action="store_true", help="Keep all underground caves in optional offline export")
     parser.add_argument("--memory", type=int, default=768,
-                        help="Offline converter memory budget in MiB (256–8192)")
+                        help="Native tile-worker memory budget in MiB (256–8192)")
     args = parser.parse_args(argv)
     root = state_dir()
     state = load_state(root)
@@ -47,7 +47,7 @@ def main(argv=None) -> int:
                 key, world, folder = current_world(state, root)
                 print(json.dumps({
                     "world": world["name"], "path": world["path"],
-                    "live_ready": True, "offline_export": str(folder) if folder else None,
+                    "requires_full_conversion": False, "offline_export": str(folder) if folder else None,
                     "url": viewer_url(state.get("port", 8787))}, indent=2))
             except ValueError:
                 print("No world registered")
