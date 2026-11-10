@@ -271,8 +271,8 @@ def main():
                     status.set("Copied the live camera URL for Lively's Web Page wallpaper.")
                     messagebox.showinfo(
                         "Lively Wallpaper",
-                        "Web URL copied:\\n" + url +
-                        "\\n\\nLively → Add Wallpaper → Web Page. "
+                        "Web URL copied:\n" + url +
+                        "\n\nLively → Add Wallpaper → Web Page. "
                         "Leave this native viewer running while the wallpaper is displayed.")
             root.after(0, finish)
         threading.Thread(target=worker, daemon=True).start()
