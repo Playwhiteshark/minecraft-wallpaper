@@ -63,11 +63,11 @@ def check_offline(binary: Path, world: Path, assets: Path, out: Path) -> None:
     result = subprocess.run(command, capture_output=True, text=True, timeout=180)
     diagnostics = result.stdout + result.stderr
     if result.returncode:
-        raise AssertionError("Patched Vantage native render failed:\\n" + diagnostics[-7000:])
-    m = re.search(r"mesh:\\s*(\\d+) vertices,\\s*(\\d+) triangles", diagnostics)
-    assert m, "No real native geometry statistics:\\n" + diagnostics[-7000:]
+        raise AssertionError("Patched Vantage native render failed:\n" + diagnostics[-7000:])
+    m = re.search(r"mesh:\s*(\d+) vertices,\s*(\d+) triangles", diagnostics)
+    assert m, "No real native geometry statistics:\n" + diagnostics[-7000:]
     assert int(m.group(1)) > 0 and int(m.group(2)) > 0, (
-        "Minecraft 26.3 palette still maps to empty terrain:\\n" + diagnostics[-7000:])
+        "Minecraft 26.3 palette still maps to empty terrain:\n" + diagnostics[-7000:])
     assert list(out.rglob("*.vtile")), "No Vantage mesh tile generated"
     print("PASS: native Minecraft 26.3 string and id/properties palettes produce",
           m.group(1), "vertices and", m.group(2), "triangles")
@@ -100,7 +100,7 @@ def check_live(binary: Path, world: Path, assets: Path, cache: Path) -> None:
         with urllib.request.urlopen(
                 f"http://127.0.0.1:{port}/tiles/t.0.0.vtile", timeout=30) as response:
             blob = response.read()
-        if blob[:2] == b"\\x1f\\x8b":
+        if blob[:2] == b"\x1f\x8b":
             blob = gzip.decompress(blob)
         assert blob[:3] == b"VTL", "Native viewer did not produce genuine mesh-format geometry"
         assert (cache / "tiles" / "t.0.0.vtile").is_file()
