@@ -135,7 +135,7 @@ def run():
                 process.kill()
                 output, _ = process.communicate()
             if not live_manifest or not live_manifest.get("tiles"):
-                print("Native live diagnostics:\\n" + output[-3500:])
+                print("Native live diagnostics:\n" + output[-3500:])
 
 
 
