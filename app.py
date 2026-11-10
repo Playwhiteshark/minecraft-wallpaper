@@ -554,6 +554,7 @@ def gui():
                     mob_scope[0]=world_selection_key(world_var.get())
                     pets_var.set(True)
                     config['shots'][selected.get()]=read_shot()
+                    config['world']=world_var.get().strip()
                     save_config(config)
                     status_var.set(f'Selected {len(chosen)} creatures for this shot. Click Refresh scene to render.')
                     dialog.destroy()
@@ -561,6 +562,7 @@ def gui():
                     mob_selection[0]=None
                     mob_scope[0]=world_selection_key(world_var.get())
                     config['shots'][selected.get()]=read_shot()
+                    config['world']=world_var.get().strip()
                     save_config(config)
                     status_var.set('Using automatic nearby-mob selection for this shot.')
                     dialog.destroy()
