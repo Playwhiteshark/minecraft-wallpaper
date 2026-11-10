@@ -72,18 +72,63 @@ def _pid_matches(record: dict) -> bool:
         return False
 
 
-def stop_viewer(root: Path | None = None) -> bool:
-    root = root or state_dir()
+def stop_viewer(root: Path | None = None, *, port: int | None = None) -> bool:
+    """Stop only our verified native Vantage process, including orphaned builds.
+
+    The previous version erased the PID record even when the process remained
+    alive. That made an old detached engine indistinguishable from a foreign
+    listener on the next app startup. Do not lose a live owned PID again.
+    """
+    from .processes import listening_owned_pid
+    root = (root or state_dir()).resolve()
     record = owned_record(root)
-    if not record:
+    target_port = int(port if port is not None else
+                      (record.get("port", 8787) if record else 8787))
+    viewer_url(target_port)
+
+    # First trust the PID file only after verifying the *actual* executable
+    # path. For old app versions with lost/stale records, inspect the port's
+    # owning Windows process and validate app engine directory + command line.
+    recorded_pid = record["pid"] if record and _pid_matches(record) else None
+    listener_pid = listening_owned_pid(root, target_port) if ping(target_port) else None
+    pid = recorded_pid or listener_pid
+    if pid is None:
+        # Forget stale metadata, never claim that a foreign listener was
+        # stopped. We deliberately do not terminate anything by port alone.
+        (root / SERVICE_FILE).unlink(missing_ok=True)
         return False
-    if _pid_matches(record):
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(record["pid"]), "/T", "/F"],
-                           capture_output=True, timeout=8)
-        else:
-            os.kill(record["pid"], signal.SIGTERM)
-    # If ownership can't be established, never terminate an unrelated process.
+
+    if os.name == "nt":
+        result = subprocess.run(
+            ["taskkill", "/PID", str(pid), "/F"],
+            capture_output=True, text=True, timeout=10)
+        # A failure is tolerable only if the verified process already exited.
+        if result.returncode and (
+                (recorded_pid and record and _pid_matches(record)) or
+                listening_owned_pid(root, target_port) == pid):
+            raise ConversionError("Windows could not stop the app-owned Vantage process "
+                                  f"(PID {pid}): {result.stderr.strip()}")
+    else:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except OSError as exc:
+            raise ConversionError(f"Could not stop app-owned Vantage PID {pid}: {exc}") from exc
+
+    # Give Windows a moment to release its listening socket. A delayed release
+    # must not turn a successful stop into a permanently orphaned process.
+    for _ in range(30):
+        if not ping(target_port):
+            break
+        time.sleep(0.1)
+    if ping(target_port):
+        if os.name == "nt" and listening_owned_pid(root, target_port) == pid:
+            raise ConversionError(f"Vantage PID {pid} still owns port {target_port}. "
+                                  "The ownership record was preserved.")
+        if os.name != "nt" and record and _pid_matches(record):
+            raise ConversionError(f"Vantage PID {pid} did not exit. "
+                                  "The ownership record was preserved.")
     (root / SERVICE_FILE).unlink(missing_ok=True)
     return True
 
@@ -104,13 +149,16 @@ def start_viewer(render_dir: Path, port: int, root: Path | None = None) -> str:
     if record and ping(port) and Path(record["render_dir"]).resolve() == render_dir:
         if _pid_matches(record):
             return address
-    if record:
-        if not _pid_matches(record) and ping(port):
-            raise ConversionError("Viewer port belongs to another process; choose a different port")
-        stop_viewer(root)
+    if record or ping(port):
+        # Automatically retire a *verified* orphan from an older app build.
+        # A foreign listener is left intact and diagnosed, never killed.
+        stop_viewer(root, port=port)
         time.sleep(0.2)
     if ping(port):
-        raise ConversionError("A different viewer already uses this port")
+        raise ConversionError(
+            f"Port {port} is occupied by an unrecognized process. "
+            "It was not terminated. Inspect the port's owning PID before "
+            "choosing another port or stopping that process.")
     command = [str(binary), "serve", str(render_dir),
                "--host", "127.0.0.1", "--port", str(port)]
     log = (root / "full-world-service.log").open("ab")
@@ -244,13 +292,19 @@ def start_live_viewer(world: Path, world_key: str, dimension: str, port: int,
                 _live_manifest_ready(port)):
             return address
 
-    if record:
-        if not _pid_matches(record) and ping(port):
-            raise ConversionError("Viewer port belongs to another process; choose a different port")
-        stop_viewer(root)
+    if record or ping(port):
+        # Old versions of this app deliberately detached Vantage for Lively.
+        # After updating the executable they may have a stale/lost PID record.
+        # The orphan probe inspects the *actual socket owner*, checks that it
+        # runs from our versioned engine directory with our private cache, and
+        # stops it safely. It does not touch any foreign Vantage instance.
+        stop_viewer(root, port=port)
         time.sleep(0.2)
     if ping(port):
-        raise ConversionError("A different Vantage viewer already uses this port")
+        raise ConversionError(
+            f"Port {port} is in use by a process not verified as this app's "
+            "renderer. Nothing was killed. Check the port's owning PID or "
+            "change the configured port.")
 
     log_path = root / "full-world-service.log"
     root.mkdir(parents=True, exist_ok=True)
