@@ -501,10 +501,10 @@ def publish_scene(scene: dict, output: Path, web_source: Path):
     output.mkdir(parents=True, exist_ok=True)
     generated = scene_script(scene)
     verify_scene_script(generated)
-    for filename in ('index.html', 'viewer.js', 'viewer.css'):
+    for filename in ('index.html', 'viewer.js', 'entity-models.js', 'viewer.css'):
         if not (web_source / filename).is_file():
             raise FileNotFoundError(web_source / filename)
-    for filename in ('index.html', 'viewer.js', 'viewer.css'):
+    for filename in ('index.html', 'viewer.js', 'entity-models.js', 'viewer.css'):
         target = output / filename
         data = (web_source / filename).read_bytes()
         # Safe to replace only files created by this app's dedicated output folder.
