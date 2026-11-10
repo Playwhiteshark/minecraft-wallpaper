@@ -25,6 +25,7 @@ def main(argv=None) -> int:
     group.add_argument("--build", action="store_true", help="Optional offline export of all saved chunks")
     group.add_argument("--serve", action="store_true", help="Start the saved world's on-demand native viewer")
     group.add_argument("--stop", action="store_true", help="Stop only the viewer owned by this app")
+    group.add_argument("--port-status", action="store_true", help="Show actual port listener, owning PID and Vantage verification (read-only)")
     group.add_argument("--status", action="store_true", help="Print registered render and viewer status")
     group.add_argument("--diagnose", action="store_true", help="Inspect actual saved chunks around the first camera (read-only)")
     group.add_argument("--open", action="store_true", help="Start viewer and open in browser")
@@ -40,6 +41,14 @@ def main(argv=None) -> int:
         register_world(state, args.world)
         save_state(state, root)
     try:
+        if args.port_status:
+            from full_world.processes import listener_report
+            from full_world.service import port_is_listening
+            port = int(state.get("port", 8787))
+            report = listener_report(root, port)
+            report["socket_listening"] = port_is_listening(port)
+            print(json.dumps(report, indent=2))
+            return 0
         if args.stop:
             print("Stopped owned viewer" if stop_viewer(root) else "No owned viewer to stop")
             return 0
