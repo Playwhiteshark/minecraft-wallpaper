@@ -144,12 +144,14 @@ def sync_lively_project(config):
     # The original v0.1 synced only scene-data.js. A new rendering feature
     # also needs its viewer.js to reach Lively's independently imported copy.
     # Both destination files are verified as ours; foreign projects are refused.
-    for filename in ('viewer.js', 'scene-data.js'):
+    for filename in ('index.html', 'viewer.js', 'entity-models.js', 'scene-data.js'):
         data = (source / filename).read_bytes()
         if filename == 'scene-data.js':
             verify_scene_script(data)
         destination = path / filename
-        if destination.read_bytes() == data:
+        if destination.is_symlink():
+            raise ValueError(f'Refusing symlinked Lively asset: {filename}')
+        if destination.is_file() and destination.read_bytes() == data:
             continue
         with tempfile.NamedTemporaryFile(dir=path, prefix='.mww-sync-', delete=False) as f:
             f.write(data)
@@ -574,11 +576,12 @@ def gui():
                     return
                 stats=result.get('stats',{})
                 stat_var.set(f"{stats.get('blocks',0):,} blocks · {stats.get('faces',0):,} faces · {stats.get('mobTextured',0)}/{stats.get('animals',0)} textured mobs · {stats.get('landscapeSamples',0)} landscape points")
+                status='Scene refreshed. '+('Connected Lively project updated.' if result.get('synced') else 'Open preview or import to Lively.')
                 if stats.get('mobWarnings'):
-                    status_var.set('Some Minecraft models/textures unavailable: '+stats['mobWarnings'][0])
-                elif stats.get('mobMissing'):
-                    status_var.set(f"{stats['mobMissing']} selected creatures were not found in the scanned area.")
-                status_var.set('Scene refreshed. '+('Connected Lively project updated.' if result.get('synced') else 'Open preview or import to Lively.'))
+                    status+=' Mob texture/model issue: '+stats['mobWarnings'][0]
+                if stats.get('mobMissing'):
+                    status+=f" {stats['mobMissing']} selected creatures were not found."
+                status_var.set(status)
                 if result.get('warning'):messagebox.showwarning('Lively update',result['warning'])
                 elif result.get('synced'):status_var.set(status_var.get()+' '+reload_lively())
             root.after(0,finish)
