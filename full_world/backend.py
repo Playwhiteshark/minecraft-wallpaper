@@ -151,7 +151,8 @@ class VantageConverter:
         self.state_root = Path(state_root)
 
     def render(self, world: Path, world_key: str, *, allow_download: bool = False,
-               memory_mib: int = 768, on_progress=None) -> RenderResult:
+               memory_mib: int = 768, client_jar: Path | None = None,
+               on_progress=None) -> RenderResult:
         world = Path(world).resolve()
         if not (world / "level.dat").is_file():
             raise ConversionError("Select a Minecraft Java save folder containing level.dat")
@@ -175,6 +176,24 @@ class VantageConverter:
             "--caves", "full", "--memory", str(memory_mib),
         ]  # No --radius: render every saved generated chunk.
         try:
+            if client_jar:
+                client_jar = Path(client_jar).expanduser().resolve()
+                if not client_jar.is_file() or client_jar.suffix.lower() != ".jar":
+                    raise ConversionError("The chosen Minecraft client JAR does not exist")
+                if on_progress:
+                    on_progress("Extracting your selected Minecraft client textures locally…")
+                extracted = subprocess.run(
+                    [str(binary), "extract", str(client_jar)],
+                    capture_output=True, text=True, timeout=240)
+                if extracted.returncode:
+                    raise ConversionError("Cannot extract chosen Minecraft JAR: " +
+                                          (extracted.stdout + extracted.stderr)[-2000:])
+                # Vantage's documented native cache path for a supplied jar.
+                home = Path(os.environ.get("HOME") or os.environ.get("USERPROFILE") or Path.home())
+                assets = home / ".cache" / "vantage" / "assets" / client_jar.stem / "assets" / "minecraft"
+                if not (assets / "blockstates").is_dir():
+                    raise ConversionError("Native converter did not publish the extracted client assets")
+                command.extend(["--assets", str(assets)])
             if on_progress:
                 on_progress("Vantage is converting real chunks across the saved world…")
             with (home / "last-render.log").open("wb") as log:
