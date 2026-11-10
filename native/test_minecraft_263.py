@@ -20,6 +20,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "tests"))
 from test_pipeline import make_world, region, root
 from full_world_convert_smoke import minimal_assets
