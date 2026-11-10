@@ -266,3 +266,56 @@ def test_camera_chunk_coverage_is_read_only_and_handles_negative_coords(tmp_path
     assert p.read_bytes() == original
     with pytest.raises(ValueError):
         inspect_near_camera(folder, "overworld", 0, 0, radius_chunks=33)
+
+
+def test_mob_selection_prefers_real_tamed_and_named_near_camera():
+    from full_world.mobs import rank_mobs
+    records = [
+        {"type": "cow", "pos": [0, 64, 1], "renderable": False, "key": "not_model"},
+        {"type": "wolf", "pos": [8, 64, 1], "renderable": True, "tame": "tamed", "name": "Buddy", "key": "abc"},
+        {"type": "fox", "pos": [2, 64, 1], "renderable": True, "tame": "wild", "name": "", "key": "def"},
+        {"type": "cat", "pos": [4, 64, 1], "renderable": True, "tame": "tamed", "name": "", "key": "ghi"},
+    ]
+    actual = rank_mobs(records, (0, 64, 0))
+    assert [e["type"] for e in actual] == ["wolf", "cat", "fox"]
+
+
+def test_mob_overlay_independent_of_surface_and_redacts_identity(tmp_path, monkeypatch):
+    from full_world import mobs
+    world = tmp_path / "Save"
+    world.mkdir()
+    output = tmp_path / "private-cache"
+    sample = {
+        "key": "uuid:must-not-export", "type": "wolf",
+        "pos": [12.5, 70, -15.3], "yaw": 0., "baby": False,
+        "tame": "tamed", "name": "Fluffy", "renderable": True,
+        "owner_uuid": "private-owner",
+    }
+    monkeypatch.setattr(mobs, "scan_world_mobs", lambda *args, **kwargs: [sample.copy()])
+    monkeypatch.setattr(mobs, "installed_client_jar", lambda *args: tmp_path / "dummy.jar")
+
+    def fake_assets(items, *args, **kwargs):
+        items[0]["texture"] = "minecraft:textures/entity/wolf/wolf_tame.png"
+        return ({"version": 1, "models": {"wolf": {"layers": {}}},
+                 "textures": {items[0]["texture"]: "pretend-png-base64"}}, [])
+
+    monkeypatch.setattr(mobs, "build_entity_assets", fake_assets)
+    stats = mobs.build_mob_overlay(world, "overworld", output, (0, 70, 0))
+    data = __import__("json").loads((output / "mww-mobs.json").read_text(encoding="utf-8"))
+    assert stats["textured"] == 1
+    assert data["entities"][0]["name"] == "Fluffy"
+    assert data["entities"][0]["pos"] == [12.5, 70, -15.3]
+    assert data["entities"][0]["texture"].endswith(".png")
+    assert "uuid" not in __import__("json").dumps(data).lower()
+    assert "surface" not in __import__("json").dumps(data).lower()
+
+
+def test_mob_overlay_fails_closed_instead_of_inventing_blocks(tmp_path):
+    from full_world.mobs import empty_mob_overlay
+    import json
+    cache = tmp_path / "cache"
+    empty_mob_overlay(cache, "overworld", "No real textures available")
+    data = json.loads((cache / "mww-mobs.json").read_text())
+    assert data["entities"] == []
+    assert data["pack"]["models"] == {}
+    assert data["warnings"]
