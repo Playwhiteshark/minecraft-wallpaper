@@ -415,8 +415,10 @@ def build_scene(world: Path, options: dict):
             by_key = {e['key']: e for e in found}
             chosen = [by_key[key] for key in dict.fromkeys(selection) if key in by_key]
             absent_ids = [key for key in dict.fromkeys(selection) if key not in by_key]
+    if len(chosen) > 128:
+        raise ValueError('This shot selects more than 128 saved mobs. Narrow the selection.')
     entities = [{key: e.get(key) for key in ('type', 'pos', 'yaw', 'baby',
-                  'variant', 'tame', 'collar')} for e in chosen][:64]
+                  'variant', 'tame', 'collar')} for e in chosen]
     # Asset data is local output only, never added to this repository.
     # Missing model/texture is surfaced rather than silently being called
     # an accurately rendered Minecraft mob.
