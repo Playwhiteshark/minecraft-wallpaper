@@ -30,44 +30,14 @@ def _command_value(command: str, key: str) -> str | None:
 
 
 def verified_owned_listener(root: Path, port: int, candidate: dict) -> int | None:
-    """Accept only a Vantage process from this app's versioned engine folder.
-
-    This is an additional identity proof, not a replacement for the PID file.
-    A different program also bound to 127.0.0.1:port remains untouched.
-    """
+    """Verified old/new native Vantage from this installation, never by name."""
     try:
         pid = int(candidate["pid"])
-        if pid < 1:
-            return None
-        binary = Path(candidate["binary"]).resolve()
-        engine_root = (Path(root).resolve() / "engines")
-        parts = binary.relative_to(engine_root).parts
-        if (len(parts) != 2 or not parts[0].startswith("vantage-") or
-                parts[1].casefold() != ("vantage.exe" if os.name == "nt" else "vantage")):
-            return None
-        cmd = str(candidate["command_line"])
-        if not re.search(r"(?i)(?:^|\s)live(?=\s)", cmd):
-            return None
-        if _command_value(cmd, "--port") != str(int(port)):
-            return None
-        if _command_value(cmd, "--host") != "127.0.0.1":
-            return None
-        output = _command_value(cmd, "--out")
-        if not output:
-            return None
-        cache = Path(output).resolve()
-        relative = cache.relative_to(Path(root).resolve() / "full-world")
-        # Our live cache is full-world/<world_key>/live-cache/vantage-*/<dim>.
-        if len(relative.parts) != 4 or relative.parts[1] != "live-cache":
-            return None
-        if not re.fullmatch(r"[a-f0-9]{24}", relative.parts[0]):
-            return None
-        if not relative.parts[2].startswith("vantage-"):
-            return None
-        return pid
-    except (ValueError, TypeError, KeyError, OSError):
-        return None
-
+        if pid > 0 and _rejection_reason(root, port, candidate) == "":
+            return pid
+    except (ValueError, KeyError, TypeError, OSError):
+        pass
+    return None
 
 
 def listener_pid_windows(port: int) -> int | None:
@@ -180,20 +150,34 @@ def _rejection_reason(root: Path, port: int, candidate: dict) -> str:
         cmd = str(candidate.get("command_line") or "")
         if not cmd:
             return "Windows did not expose the process command line"
-        if not re.search(r"(?i)(?:^|\s)live(?=\s)", cmd):
-            return "Process command is not a Vantage live session"
         if _command_value(cmd, "--port") != str(int(port)):
             return "Command-line port does not match the listening port"
         if _command_value(cmd, "--host") != "127.0.0.1":
             return "Command does not explicitly bind to loopback"
-        output = _command_value(cmd, "--out")
-        if not output:
-            return "Command does not identify a private tile cache"
-        relative = Path(output).resolve().relative_to(Path(root).resolve() / "full-world").parts
-        if (len(relative) != 4 or not re.fullmatch(r"[a-f0-9]{24}", relative[0]) or
-                relative[1] != "live-cache" or not relative[2].startswith("vantage-") or
-                relative[3] not in ("overworld", "the_nether", "the_end")):
-            return "Renderer output is not a recognized private world/dimension cache"
+        if re.search(r"(?i)(?:^|\s)live(?=\s)", cmd):
+            output = _command_value(cmd, "--out")
+            if not output:
+                return "Live command does not identify a private tile cache"
+            relative = Path(output).resolve().relative_to(Path(root).resolve() / "full-world").parts
+            if (len(relative) != 4 or not re.fullmatch(r"[a-f0-9]{24}", relative[0]) or
+                    relative[1] != "live-cache" or not relative[2].startswith("vantage-") or
+                    relative[3] not in ("overworld", "the_nether", "the_end")):
+                return "Live output is not a recognized private world/dimension cache"
+        elif re.search(r"(?i)(?:^|\s)serve(?=\s)", cmd):
+            # Original first-generation GUI launched Vantage 'serve' with an
+            # offline snapshot and also detached that native process.
+            match = re.search(r'(?i)(?:^|\s)serve\s+(?:"([^"]+)"|([^\s"]+))', cmd)
+            if not match:
+                return "Legacy serve command lacks its offline snapshot path"
+            render_dir = Path(match.group(1) or match.group(2)).resolve()
+            relative = render_dir.relative_to(Path(root).resolve() / "full-world").parts
+            if (len(relative) != 3 or not re.fullmatch(r"[a-f0-9]{24}", relative[0]) or
+                    relative[1] != "versions" or not
+                    ((render_dir / "manifest.json").is_file() or
+                     (render_dir / "world.json").is_file())):
+                return "Legacy serve path is not a validated app-owned offline snapshot"
+        else:
+            return "Command is neither app-owned Vantage live nor legacy serve"
     except (OSError, TypeError, ValueError, KeyError):
         return "The renderer binary or cache is outside this app's state directory"
     return ""
