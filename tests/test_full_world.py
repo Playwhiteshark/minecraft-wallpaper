@@ -326,7 +326,7 @@ def test_mob_overlay_fails_closed_instead_of_inventing_blocks(tmp_path):
 def test_orphan_identification_requires_exact_engine_cache_host_and_port(tmp_path):
     from full_world.processes import verified_owned_listener
     root = tmp_path / "Minecraft Living World"
-    engine = root / "engines" / "vantage-previous-version" / "vantage"
+    engine = root / "engines" / "vantage-previous-version" / ("vantage.exe" if os.name == "nt" else "vantage")
     cache = (root / "full-world" / ("a" * 24) / "live-cache" /
              "vantage-previous-version" / "overworld")
     engine.parent.mkdir(parents=True)
@@ -362,6 +362,12 @@ def test_orphan_recovery_without_pid_file_stops_only_verified_listener(tmp_path,
         state["killed"].append(pid)
         state["listening"] = False
     monkeypatch.setattr(service.os, "kill", kill)
+    if os.name == "nt":
+        def fake_run(args, **kwargs):
+            assert args[:2] == ["taskkill", "/PID"] and args[2] == "9512"
+            kill(9512, None)
+            return type("Result", (), {"returncode": 0, "stderr": ""})()
+        monkeypatch.setattr(service.subprocess, "run", fake_run)
     assert service.stop_viewer(tmp_path, port=8787)
     assert state["killed"] == [9512]
     assert not service.ping(8787)
@@ -387,6 +393,9 @@ def test_owned_shutdown_preserves_record_if_process_remains(tmp_path, monkeypatc
     monkeypatch.setattr(service, "ping", lambda port: True)
     monkeypatch.setattr(processes, "listening_owned_pid", lambda root, port: None)
     monkeypatch.setattr(service.os, "kill", lambda pid, sig: None)
+    if os.name == "nt":
+        monkeypatch.setattr(service.subprocess, "run", lambda *args, **kwargs:
+                            type("Result", (), {"returncode": 0, "stderr": ""})())
     monkeypatch.setattr(service.time, "sleep", lambda delay: None)
     with pytest.raises(ConversionError, match="ownership record was preserved"):
         service.stop_viewer(tmp_path)
