@@ -66,6 +66,7 @@ def main():
 
     selected_world = tk.StringVar()
     selected_view = tk.StringVar()
+    dimension_var = tk.StringVar(value="overworld")
     fields = {k: tk.StringVar() for k in
               ("x", "y", "z", "distance", "rotation", "tilt")}
     startup = tk.BooleanVar(value=bool(registry.get("startup", False)))
@@ -114,6 +115,7 @@ def main():
     def load_view(_event=None):
         for view in view_entries:
             if view["name"] == selected_view.get():
+                dimension_var.set(str(view.get("dimension", "overworld")))
                 for key, var in fields.items():
                     var.set(str(view.get(key, 0)))
                 return
@@ -126,6 +128,7 @@ def main():
             raise ValueError("Select or create a camera view")
         for field, var in fields.items():
             view[field] = float(var.get())
+        view["dimension"] = dimension_var.get()
         # Force numeric and camera validation before writing.
         camera_url(viewer_url(registry.get("port", 8787)), view)
         save()
@@ -263,6 +266,7 @@ def main():
             for field, var in fields.items():
                 base[field] = float(var.get())
             base["name"] = name
+            base["dimension"] = dimension_var.get()
             world["views"].append(base)
             save()
             refresh_views()
@@ -333,6 +337,12 @@ def main():
     view_combo.bind("<<ComboboxSelected>>", load_view)
     ttk.Button(row, text="New camera", command=add_view).pack(side="left", padx=5)
     ttk.Button(row, text="Delete", command=delete_view).pack(side="left")
+    row = ttk.Frame(body)
+    row.pack(fill="x", pady=5)
+    ttk.Label(row, text="Dimension", width=18).pack(side="left")
+    ttk.Combobox(row, textvariable=dimension_var,
+                 values=("overworld", "the_nether", "the_end"),
+                 state="readonly", width=30).pack(side="left")
     grid = ttk.Frame(body)
     grid.pack(fill="x", pady=6)
     for n, key in enumerate(fields):
@@ -356,5 +366,12 @@ def main():
     ttk.Label(body, textvariable=status, wraplength=860).pack(anchor="w", pady=6)
     ttk.Label(body, text="The original world stays read-only. Your old cropped wallpaper and settings remain untouched.",
               wraplength=860).pack(anchor="w", pady=6)
+    def on_close():
+        if busy[0]:
+            messagebox.showwarning("Conversion is active",
+                                   "The saved-world conversion is active. Close after it completes to protect the output.")
+            return
+        root.destroy()
+    root.protocol("WM_DELETE_WINDOW", on_close)
     show_world()
     root.mainloop()
