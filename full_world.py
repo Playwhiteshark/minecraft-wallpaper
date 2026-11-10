@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Full Minecraft world wallpaper: conversion → native Three.js viewer → Lively.
+"""Minecraft wallpaper: live saved-world tile streaming → Three.js → Lively.
 
 By default opens the control panel; flags enable one-shot automation and an
 opt-in Windows login viewer. No Minecraft client/server, Node or Zig install.
@@ -15,20 +15,21 @@ from pathlib import Path
 from full_world.backend import VantageConverter
 from full_world.config import (camera_url, current_world, load_state,
                                register_world, save_state, state_dir)
-from full_world.service import start_viewer, stop_viewer, viewer_url
+from full_world.service import start_live_viewer, stop_viewer, viewer_url
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="Render every saved Minecraft chunk using native Vantage, view it in Lively.")
+        description="Stream actual saved-world chunks on demand with Vantage and Lively.")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--build", action="store_true", help="Convert registered world and start viewer")
+    group.add_argument("--build", action="store_true", help="Optional offline export of all saved chunks")
     group.add_argument("--serve", action="store_true", help="Start the saved render's local viewer")
     group.add_argument("--stop", action="store_true", help="Stop only the viewer owned by this app")
     group.add_argument("--status", action="store_true", help="Print registered render and viewer status")
     group.add_argument("--open", action="store_true", help="Start viewer and open in browser")
     parser.add_argument("--world", type=Path, help="Register a Minecraft save folder first")
     parser.add_argument("--jar", type=Path, help="Optional installed Minecraft client JAR")
+    parser.add_argument("--caves-full", action="store_true", help="Keep all underground caves in optional offline export")
     parser.add_argument("--memory", type=int, default=768,
                         help="Offline converter memory budget in MiB (256–8192)")
     args = parser.parse_args(argv)
@@ -46,31 +47,34 @@ def main(argv=None) -> int:
                 key, world, folder = current_world(state, root)
                 print(json.dumps({
                     "world": world["name"], "path": world["path"],
-                    "ready": bool(folder), "render": str(folder) if folder else None,
+                    "live_ready": True, "offline_export": str(folder) if folder else None,
                     "url": viewer_url(state.get("port", 8787))}, indent=2))
             except ValueError:
                 print("No world registered")
             return 0
         if args.build or args.serve or args.open:
             key, world, folder = current_world(state, root)
+            jar = args.jar or (Path(world["jar"]) if world.get("jar") else None)
             if args.build:
                 converter = VantageConverter(root)
-                jar = args.jar or (Path(world["jar"]) if world.get("jar") else None)
-                result = converter.render(Path(world["path"]), key,
-                                          allow_download=True, memory_mib=args.memory,
-                                          client_jar=jar,
-                                          on_progress=print)
-                folder = result.directory
-            if folder is None:
-                raise ValueError("No successful full-world render yet; run --build first")
-            address = start_viewer(folder, state.get("port", 8787), root)
-            url = camera_url(address, world["views"][0])
-            print("Full-world viewer:", url)
+                result = converter.render(
+                    Path(world["path"]), key, allow_download=True,
+                    memory_mib=args.memory, client_jar=jar,
+                    caves_full=args.caves_full, on_progress=print)
+                print("Optional offline export:", result.directory)
+                return 0
+            view = world["views"][0]
+            address = start_live_viewer(
+                Path(world["path"]), key, view.get("dimension", "overworld"),
+                state.get("port", 8787), root, client_jar=jar,
+                memory_mib=args.memory, allow_download=bool(args.open))
+            url = camera_url(address, view)
+            print("Live, on-demand viewer:", url)
             if args.open:
                 webbrowser.open(url)
             return 0
         if args.world is not None:
-            print("World registered. Run --build to convert it.")
+            print("World registered. Run --open to view it; --build is an optional offline export.")
             return 0
         from full_world.gui import main as run_gui
         run_gui()
