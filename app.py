@@ -47,7 +47,7 @@ def default_config():
         'schema': 1, 'world': '', 'jar': '', 'lively_project': '',
         'selected': 0, 'shots': [
             {'name': 'Home base', 'dimension': 'overworld', 'x': 0, 'y': 80, 'z': 0,
-             'radius': 24, 'landscape_radius': 128, 'below': 14, 'above': 28, 'light': 'golden',
+             'radius': 24, 'landscape_radius': 0, 'below': 14, 'above': 28, 'light': 'golden',
              'yaw': 42, 'pitch': 22, 'distance': 52, 'pets': True,
              'mob_radius': 96}
         ],
@@ -204,6 +204,9 @@ def refresh(config, *, force=False, fetch_models=False):
     elif shot.get('mob_world_key') and shot.get('mob_world_key') != world_selection_key(world):
         shot['mob_ids'] = None
     shot.pop('mob_world_key', None)
+    # The experimental sparse 8-block landscape is not a real-world renderer.
+    # Disable it for all current shots, including saved v0.2/v0.3 settings.
+    shot['landscape_radius'] = 0
     shot['jar'] = config.get('jar', '')
     shot['model_cache'] = str(data_root() / 'mob-models')
     shot['fetch_models'] = fetch_models
@@ -311,7 +314,7 @@ def gui():
     world_var=tk.StringVar(value=config.get('world',''))
     jar_var=tk.StringVar(value=config.get('jar',''))
     selected=tk.IntVar(value=min(max(0,int(config.get('selected',0))),len(config['shots'])-1))
-    strings={k:tk.StringVar() for k in ('name','dimension','x','y','z','radius','landscape_radius','mob_radius','below','above','light','yaw','pitch','distance')}
+    strings={k:tk.StringVar() for k in ('name','dimension','x','y','z','radius','mob_radius','below','above','light','yaw','pitch','distance')}
     pets_var=tk.BooleanVar(value=True)
     # Internal identity keys are retained per shot in config, never in scene data.
     mob_selection = [None]
@@ -388,8 +391,6 @@ def gui():
     for k in ('x','y','z'):
         ttk.Entry(coords,textvariable=strings[k],width=8).pack(side='left',padx=(0,7),fill='x',expand=True)
     line(left,'Radius (8–48)',strings['radius'])
-    line(left,'Surroundings (0–192)',strings['landscape_radius'])
-    ttk.Label(left,text='Actual saved terrain in the distance (0 = old diorama).',style='Small.TLabel').pack(anchor='w',pady=(0,3))
     def auto_frame():
         try:
             radius=int(strings['radius'].get())
@@ -424,7 +425,7 @@ def gui():
     def form_from_shot(index):
         if not (0<=index<len(config['shots'])):return
         s=config['shots'][index]
-        for k,var in strings.items():var.set(str(s.get(k,128 if k=='landscape_radius' else 96 if k=='mob_radius' else '')))
+        for k,var in strings.items():var.set(str(s.get(k,96 if k=='mob_radius' else '')))
         pets_var.set(bool(s.get('pets',True)))
         key = world_selection_key(world_var.get())
         choices = s.get('mobs_by_world')
@@ -457,16 +458,15 @@ def gui():
         s['mobs_by_world'] = all_choices
         s['mob_ids'] = all_choices.get(current_key)
         s['mob_world_key'] = current_key
+        s['landscape_radius'] = 0  # deprecated experimental layer
         if not s['name']:raise ValueError('Shot needs a name')
-        for k in ('x','y','z','radius','landscape_radius','mob_radius','below','above'):
+        for k in ('x','y','z','radius','mob_radius','below','above'):
             s[k]=int(s[k])
         for k in ('yaw','pitch','distance'):
             s[k]=float(s[k])
         s['pets']=bool(pets_var.get())
         if not 8<=s['radius']<=48:raise ValueError('Radius must be between 8 and 48')
         if not 8<=s['mob_radius']<=192:raise ValueError('Mob search radius must be 8–192')
-        if not (s['landscape_radius']==0 or s['radius']+8<=s['landscape_radius']<=192):
-            raise ValueError('Surroundings must be 0 or at least 8 blocks wider than the detailed radius (max 192)')
         if not 4<=s['below']<=40 or not 8<=s['above']<=60:raise ValueError('Vertical range is invalid')
         return s
 
