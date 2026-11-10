@@ -20,6 +20,7 @@ from pathlib import Path
 
 from mww.nbt import WorldFormatError, level_info
 from mww.scene import build_scene, publish_scene, scene_fingerprint, verify_scene_script
+from mww.entities import scan_world_mobs, MODEL_TYPES
 
 PROJECT = Path(__file__).resolve().parent
 WEB = PROJECT / 'web'
@@ -46,7 +47,8 @@ def default_config():
         'selected': 0, 'shots': [
             {'name': 'Home base', 'dimension': 'overworld', 'x': 0, 'y': 80, 'z': 0,
              'radius': 24, 'landscape_radius': 128, 'below': 14, 'above': 28, 'light': 'golden',
-             'yaw': 42, 'pitch': 22, 'distance': 52, 'pets': True}
+             'yaw': 42, 'pitch': 22, 'distance': 52, 'pets': True,
+             'mob_radius': 96}
         ],
         'last_fingerprint': '', 'last_stats': {},
     }
@@ -171,7 +173,7 @@ def reload_lively():
     return 'Lively web wallpaper reload requested.'
 
 
-def refresh(config, *, force=False):
+def refresh(config, *, force=False, fetch_models=False):
     world = Path(str(config.get('world', ''))).expanduser().resolve()
     if not (world / 'level.dat').is_file():
         raise ValueError('Select a Minecraft Java world folder containing level.dat.')
@@ -180,6 +182,8 @@ def refresh(config, *, force=False):
         raise ValueError('Selected shot index is invalid')
     shot = dict(config['shots'][index])
     shot['jar'] = config.get('jar', '')
+    shot['model_cache'] = str(data_root() / 'mob-models')
+    shot['fetch_models'] = fetch_models
     fingerprint = scene_fingerprint(world, shot)
     generated = output_folder() / 'scene-data.js'
     if not force and fingerprint == config.get('last_fingerprint') and generated.is_file():
@@ -284,8 +288,10 @@ def gui():
     world_var=tk.StringVar(value=config.get('world',''))
     jar_var=tk.StringVar(value=config.get('jar',''))
     selected=tk.IntVar(value=min(max(0,int(config.get('selected',0))),len(config['shots'])-1))
-    strings={k:tk.StringVar() for k in ('name','dimension','x','y','z','radius','landscape_radius','below','above','light','yaw','pitch','distance')}
+    strings={k:tk.StringVar() for k in ('name','dimension','x','y','z','radius','landscape_radius','mob_radius','below','above','light','yaw','pitch','distance')}
     pets_var=tk.BooleanVar(value=True)
+    # Internal identity keys are retained per shot in config, never in scene data.
+    mob_selection = [None]
     status_var=tk.StringVar(value='Ready. Minecraft must be closed before refreshing.')
     stat_var=tk.StringVar(value='No render yet.')
     busy=[False]
@@ -375,7 +381,13 @@ def gui():
     ttk.Label(row,text='Yaw / pitch / zoom',width=18).pack(side='left')
     for k in ('yaw','pitch','distance'):
         ttk.Entry(row,textvariable=strings[k],width=8).pack(side='left',padx=(0,7),fill='x',expand=True)
-    ttk.Checkbutton(left,text='Include saved important animals (happy ghasts, horse, wolf, cat, etc.)',variable=pets_var).pack(anchor='w',pady=9)
+    ttk.Checkbutton(left,text='Include saved animals',variable=pets_var).pack(anchor='w',pady=(8,2))
+    row=ttk.Frame(left);row.pack(fill='x',pady=3)
+    ttk.Label(row,text='Mob search radius',width=18).pack(side='left')
+    ttk.Entry(row,textvariable=strings['mob_radius'],width=12).pack(side='left',fill='x',expand=True)
+    ttk.Button(row,text='Choose saved mobs…',command=lambda:choose_mobs()).pack(side='left',padx=(6,0))
+    ttk.Label(left,text='Find named/tamed creatures first, then other saved mobs; selection is per shot.',
+              style='Small.TLabel',wraplength=445).pack(anchor='w',pady=(0,5))
 
     ttk.Label(right,text='SAVED SHOTS',font=('Segoe UI Semibold',11)).pack(anchor='w',pady=(2,9))
     shotlist=tk.Listbox(right,background=surface,foreground=fg,selectbackground='#187e7c',relief='flat',height=7,
@@ -386,8 +398,9 @@ def gui():
     def form_from_shot(index):
         if not (0<=index<len(config['shots'])):return
         s=config['shots'][index]
-        for k,var in strings.items():var.set(str(s.get(k,128 if k=='landscape_radius' else '')))
+        for k,var in strings.items():var.set(str(s.get(k,128 if k=='landscape_radius' else 96 if k=='mob_radius' else '')))
         pets_var.set(bool(s.get('pets',True)))
+        mob_selection[0] = list(s['mob_ids']) if isinstance(s.get('mob_ids'),list) else None
         selected.set(index)
 
     def refresh_list():
@@ -401,13 +414,15 @@ def gui():
 
     def read_shot():
         s={k:v.get().strip() for k,v in strings.items()}
+        s['mob_ids'] = None if mob_selection[0] is None else list(mob_selection[0])
         if not s['name']:raise ValueError('Shot needs a name')
-        for k in ('x','y','z','radius','landscape_radius','below','above'):
+        for k in ('x','y','z','radius','landscape_radius','mob_radius','below','above'):
             s[k]=int(s[k])
         for k in ('yaw','pitch','distance'):
             s[k]=float(s[k])
         s['pets']=bool(pets_var.get())
         if not 8<=s['radius']<=48:raise ValueError('Radius must be between 8 and 48')
+        if not 8<=s['mob_radius']<=192:raise ValueError('Mob search radius must be 8–192')
         if not (s['landscape_radius']==0 or s['radius']+8<=s['landscape_radius']<=192):
             raise ValueError('Surroundings must be 0 or at least 8 blocks wider than the detailed radius (max 192)')
         if not 4<=s['below']<=40 or not 8<=s['above']<=60:raise ValueError('Vertical range is invalid')
@@ -417,6 +432,105 @@ def gui():
         config['world']=world_var.get().strip();config['jar']=jar_var.get().strip()
         config['shots'][selected.get()]=read_shot();config['selected']=selected.get()
         save_config(config)
+
+    def choose_mobs():
+        if busy[0]:
+            return
+        try:
+            shot = read_shot()
+            world = Path(world_var.get()).expanduser().resolve()
+            if not (world / 'level.dat').is_file():
+                raise ValueError('Choose a Minecraft world before scanning mobs')
+        except Exception as exc:
+            return messagebox.showerror('Mob selection', str(exc))
+        busy[0] = True
+        status_var.set('Scanning saved creatures in the selected region…')
+
+        def worker():
+            try:
+                mobs = scan_world_mobs(world, shot['dimension'],
+                                       (shot['x'], shot['y'], shot['z']),
+                                       shot['mob_radius'])
+                error = None
+            except Exception as exc:
+                mobs, error = None, str(exc)
+
+            def finished():
+                busy[0] = False
+                if error:
+                    status_var.set('Mob scan failed; no selections were changed.')
+                    messagebox.showerror('Mob scan', error)
+                    return
+                status_var.set(f'Found {len(mobs)} saved creatures. Select which to render.')
+                dialog = tk.Toplevel(root)
+                dialog.title('Choose saved Minecraft mobs')
+                dialog.configure(bg=bg)
+                dialog.geometry('680x560')
+                dialog.transient(root)
+                dialog.grab_set()
+                ttk.Label(dialog,text=f'{len(mobs)} creatures in {shot["dimension"]}, within {shot["mob_radius"]} blocks (all heights).',
+                          font=('Segoe UI Semibold',11)).pack(anchor='w',padx=16,pady=(14,4))
+                ttk.Label(dialog,text='Named and tamed mobs first. Unknown tamed status is labelled. Ctrl is not required: click to toggle.',
+                          style='Small.TLabel',wraplength=650).pack(anchor='w',padx=16,pady=(0,6))
+                row=ttk.Frame(dialog);row.pack(fill='both',expand=True,padx=16,pady=8)
+                lst=tk.Listbox(row,selectmode=tk.MULTIPLE,exportselection=False,
+                               background=surface,foreground=fg,selectbackground='#187e7c',
+                               height=16,font=('Consolas',10),relief='flat')
+                scrollbar=ttk.Scrollbar(row,orient='vertical',command=lst.yview)
+                lst.configure(yscrollcommand=scrollbar.set)
+                lst.pack(side='left',fill='both',expand=True)
+                scrollbar.pack(side='right',fill='y')
+                old_keys=set(shot.get('mob_ids') or [])
+                missing_keys=old_keys-{mob['key'] for mob in mobs}
+                for mob in mobs:
+                    label=mob['name'] or ('Unnamed '+mob['type'].replace('_',' '))
+                    tame='tamed' if mob['tame']=='tamed' else ('wild' if mob['tame']=='wild' else 'tame unknown')
+                    supported='' if mob['renderable'] else ' · model unverified'
+                    unstable='' if mob['stable'] else ' · no UUID'
+                    lst.insert('end',f'{label}  [{mob["type"]}, {tame}]{supported}{unstable}')
+                selected_ids=shot.get('mob_ids')
+                if isinstance(selected_ids,list):
+                    for i,mob in enumerate(mobs):
+                        if mob['key'] in old_keys:lst.selection_set(i)
+                else:
+                    for i,mob in enumerate(mobs):
+                        x,y,z=mob['pos']
+                        if (mob['resource'] in MODEL_TYPES and
+                            abs(x-shot['x'])<=shot['radius'] and
+                            abs(z-shot['z'])<=shot['radius'] and
+                            shot['y']-shot['below']-6<=y<=shot['y']+shot['above']+6):
+                            lst.selection_set(i)
+                keep_missing=[True]
+                note=(f'{len(missing_keys)} previously selected mobs not found: selections preserved unless cleared.'
+                      if missing_keys else 'Selection is saved locally by mob UUID; no private IDs go into the wallpaper.')
+                ttk.Label(dialog,text=note,style='Small.TLabel',
+                          wraplength=650).pack(anchor='w',padx=16,pady=(0,6))
+                buttons=ttk.Frame(dialog);buttons.pack(fill='x',padx=16,pady=(4,14))
+                def save_selected():
+                    chosen=[mobs[i]['key'] for i in lst.curselection()]
+                    if keep_missing[0]:
+                        chosen.extend(sorted(missing_keys))
+                    mob_selection[0]=list(dict.fromkeys(chosen))
+                    pets_var.set(True)
+                    config['shots'][selected.get()]=read_shot()
+                    save_config(config)
+                    status_var.set(f'Selected {len(chosen)} creatures for this shot. Click Refresh scene to render.')
+                    dialog.destroy()
+                def use_automatic():
+                    mob_selection[0]=None
+                    config['shots'][selected.get()]=read_shot()
+                    save_config(config)
+                    status_var.set('Using automatic nearby-mob selection for this shot.')
+                    dialog.destroy()
+                def clear_all():
+                    lst.selection_clear(0,'end')
+                    keep_missing[0]=False
+                ttk.Button(buttons,text='Save selection',style='Accent.TButton',command=save_selected).pack(side='left')
+                ttk.Button(buttons,text='Clear',command=clear_all).pack(side='left',padx=6)
+                ttk.Button(buttons,text='Automatic',command=use_automatic).pack(side='left')
+                ttk.Button(buttons,text='Cancel',command=dialog.destroy).pack(side='right')
+            root.after(0, finished)
+        threading.Thread(target=worker,daemon=True).start()
 
     def do_save():
         try:persist();refresh_list();status_var.set('Shot and settings saved locally.')
@@ -450,7 +564,7 @@ def gui():
         except Exception as e:return messagebox.showerror('Invalid settings',str(e))
         busy[0]=True;status_var.set('Reading saved chunks and building a bounded scene…')
         def worker():
-            try:result=refresh(config,force=True);error=None
+            try:result=refresh(config,force=True,fetch_models=True);error=None
             except Exception as e:result=None;error=str(e)
             def finish():
                 busy[0]=False
@@ -459,7 +573,11 @@ def gui():
                     messagebox.showerror('Refresh failed',error)
                     return
                 stats=result.get('stats',{})
-                stat_var.set(f"{stats.get('blocks',0):,} blocks · {stats.get('faces',0):,} faces · {stats.get('textures',0)} textures · {stats.get('animals',0)} animals · {stats.get('landscapeSamples',0)} landscape points")
+                stat_var.set(f"{stats.get('blocks',0):,} blocks · {stats.get('faces',0):,} faces · {stats.get('mobTextured',0)}/{stats.get('animals',0)} textured mobs · {stats.get('landscapeSamples',0)} landscape points")
+                if stats.get('mobWarnings'):
+                    status_var.set('Some Minecraft models/textures unavailable: '+stats['mobWarnings'][0])
+                elif stats.get('mobMissing'):
+                    status_var.set(f"{stats['mobMissing']} selected creatures were not found in the scanned area.")
                 status_var.set('Scene refreshed. '+('Connected Lively project updated.' if result.get('synced') else 'Open preview or import to Lively.'))
                 if result.get('warning'):messagebox.showwarning('Lively update',result['warning'])
                 elif result.get('synced'):status_var.set(status_var.get()+' '+reload_lively())
