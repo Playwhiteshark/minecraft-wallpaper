@@ -18,6 +18,8 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install pytest
       - run: python -m pytest -q
+      - run: python -m compileall -q full_world.py full_world
+      - run: python tests/full_world_native_smoke.py
       - run: node --check web/viewer.js
       - run: node --check web/entity-models.js
       - run: node --test tests/entity_models.test.js
