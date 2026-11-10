@@ -123,12 +123,15 @@ def stop_viewer(root: Path | None = None, *, port: int | None = None) -> bool:
             break
         time.sleep(0.1)
     if ping(target_port):
-        if os.name == "nt" and listening_owned_pid(root, target_port) == pid:
-            raise ConversionError(f"Vantage PID {pid} still owns port {target_port}. "
-                                  "The ownership record was preserved.")
-        if os.name != "nt" and record and _pid_matches(record):
-            raise ConversionError(f"Vantage PID {pid} did not exit. "
-                                  "The ownership record was preserved.")
+        # A verified record may still belong to a living Vantage process even
+        # if Windows cannot query the socket owner (CIM restrictions/races).
+        # Do not erase that record: the next launch must still be able to stop it.
+        still_recorded = bool(recorded_pid and record and _pid_matches(record))
+        still_listening = listening_owned_pid(root, target_port) == pid
+        if still_recorded or still_listening:
+            raise ConversionError(
+                f"Vantage PID {pid} is still running on port {target_port}. "
+                "The ownership record was preserved.")
     (root / SERVICE_FILE).unlink(missing_ok=True)
     return True
 
