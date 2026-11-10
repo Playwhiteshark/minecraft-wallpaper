@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .backend import (ConversionError, backend_path, prepare_client_assets,
+from .backend import (VERSION, ConversionError, backend_path, prepare_client_assets,
                       require_engine, write_json_atomic)
 from mww.scene import check_world_closed
 from .config import state_dir
@@ -204,7 +204,11 @@ def start_live_viewer(world: Path, world_key: str, dimension: str, port: int,
     check_world_closed(world)
     binary = require_engine(root, allow_download=allow_download)
     assets = prepare_client_assets(binary, client_jar)
-    cache = (root / "full-world" / world_key / "live-cache" / dimension).resolve()
+    # Never reuse tiles baked by older native decoders: a 26.3 chunk could
+    # have been cached as a perfectly valid but completely empty VTL4 tile.
+    # Tag the cache by engine build; old cache remains available for rollback.
+    cache = (root / "full-world" / world_key / "live-cache" /
+             ("vantage-" + VERSION) / dimension).resolve()
     cache.mkdir(parents=True, exist_ok=True)
     address = viewer_url(port)
     command = live_command(binary, world, cache, port, dimension, memory_mib, assets)

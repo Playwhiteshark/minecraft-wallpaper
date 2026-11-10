@@ -17,9 +17,19 @@ Minecraft Java saved world (read only)
 
 The old small-crop Python scene builder is a **legacy rollback**, not a full-world substitute.
 
+## Minecraft 26.3 native compatibility
+
+Upstream Vantage 0.15.1 (MIT, commit `953f0ac78d62de751a935b8e8d5be2d711d6fd56`) predates Minecraft 26.3's block-state palette change. Its native `src/chunk.zig` silently decoded renamed `id/properties` compounds and compact string IDs as `minecraft:air`, producing a plausible populated-chunk manifest but no triangles. This is [upstream issue #103](https://github.com/thoughts-on-things/vantage-mc/issues/103).
+
+Our `native/patch_vantage_263.py` applies one narrowly scoped patch to the **existing native palette decoder**, retaining the original geometry mesher, asset handling, binary protocol and Three.js viewer. The patched Windows/Linux binaries are built from that pinned upstream commit with Zig 0.16, include the upstream MIT license and are published with SHA-256 verification. `full_world/backend.py` pins the exact archive hashes and gives the new executable an independent `VERSION` path.
+
+Cache keys include this native engine version under `live-cache/vantage-<VERSION>/<dimension>`. This is **mandatory**: old Vantage could cache zero-vertex tiles under otherwise valid tile names. Reusing them after a decoder fix would yield the same empty-sky screenshot despite a successful binary update. Previous cache files and the source saved world remain untouched.
+
+The native CI regression constructs self-owned NBT for Minecraft DataVersion 5023, with both compact TAG_String and renamed compound palette forms. It verifies **nonzero mesh vertices and triangles** from `vantage render`, and nonzero solid vertices in an actual `vantage live` HTTP tile response. Never consider a successful process exit, world bounds, advertised tile count, or HTTP 200 sufficient geometry proof. Complete visual appearance for the user's save in Lively still needs a real local acceptance check.
+
 ## Reused upstream engine — no second Minecraft implementation
 
-- **Vantage 0.15.1 (MIT):** native Java save discovery, modern Anvil/region reading, blockstate resolver, chunk meshing, texture arrays, light/biome output, caching, embedded web viewer and lazy tile HTTP production.
+- **Vantage 0.15.1 + small 26.3 palette patch (MIT):** native Java save discovery, modern Anvil/region reading, blockstate resolver, chunk meshing, texture arrays, light/biome output, caching, embedded web viewer and lazy tile HTTP production.
 - **Vantage's Three.js engine:** tile priority and budgets, streaming, geometry/material construction, GPU residency, frustum-aware view planning and camera URL hashes. Our Python code does not implement those subsystems.
 - **Python standard library/Tkinter:** the machine-local world registry, camera bookmarks, native process supervision, optional pinned binary download, startup shortcut and offline-export snapshots.
 - **Lively:** desktop host pointing at the Vantage loopback URL.

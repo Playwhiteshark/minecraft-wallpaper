@@ -1,0 +1,85 @@
+name: Build patched native Vantage (Minecraft 26.3)
+
+on:
+  push:
+    branches: [fix/minecraft-263-vantage-palettes]
+    paths:
+      - 'native/**'
+      - '.github/workflows/native-vantage-263.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  native-vantage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout exactly pinned MIT-licensed upstream Vantage
+        shell: bash
+        run: |
+          git clone --depth 1 --branch v0.15.1 https://github.com/thoughts-on-things/vantage-mc.git upstream
+          test "$(git -C upstream rev-parse HEAD)" = '953f0ac78d62de751a935b8e8d5be2d711d6fd56'
+          python native/patch_vantage_263.py upstream
+
+      - uses: mlugg/setup-zig@v2.2.1
+        with:
+          version: 0.16.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: upstream/web/package-lock.json
+
+      - name: Reuse upstream embedded Three.js viewer
+        working-directory: upstream/web
+        run: npm ci && npm run build:viewer
+
+      - name: Native Zig decoder regression tests
+        working-directory: upstream
+        run: zig build test
+
+      - name: Build Linux native runtime with embedded viewer
+        working-directory: upstream
+        run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux-musl
+
+      - name: Install fixture-only Python test dependency
+        run: python -m pip install pytest
+
+      - name: Run genuine Minecraft 26.3 saved-world and live-stream regression
+        run: python native/test_minecraft_263.py upstream/zig-out/bin/vantage
+
+      - name: Package Linux with upstream MIT license
+        shell: bash
+        run: |
+          mkdir -p package/linux
+          cp upstream/zig-out/bin/vantage upstream/LICENSE package/linux/
+          tar czf vantage-x86_64-linux.tar.gz -C package/linux vantage LICENSE
+
+      - name: Cross-compile Windows with same patched native decoder and embedded viewer
+        working-directory: upstream
+        run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows
+
+      - name: Package Windows with upstream MIT license
+        shell: bash
+        run: |
+          mkdir -p package/windows
+          cp upstream/zig-out/bin/vantage.exe upstream/LICENSE package/windows/
+          (cd package/windows && zip -q "$GITHUB_WORKSPACE/vantage-x86_64-windows.zip" vantage.exe LICENSE)
+          sha256sum vantage-x86_64-windows.zip vantage-x86_64-linux.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish immutable patched binary release for pinning in Python wrapper
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="mww-vantage-263-${GITHUB_SHA}"
+          gh release create "$tag" \
+            vantage-x86_64-windows.zip vantage-x86_64-linux.tar.gz SHA256SUMS \
+            --target "$GITHUB_SHA" \
+            --title "Vantage 0.15.1 + Minecraft 26.3 palette compatibility" \
+            --notes "MIT licensed; Vantage upstream commit 953f0ac78d62de751a935b8e8d5be2d711d6fd56. Applies only native/patch_vantage_263.py (new id/properties and compact string block-state palettes). Includes the original embedded Vantage Three.js viewer, not a replacement engine. Both native Zig tests and real Minecraft 26.3 live tile streaming must pass before publication. Not an upstream Vantage release." 

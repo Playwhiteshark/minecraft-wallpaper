@@ -222,6 +222,7 @@ def test_live_viewer_starts_with_no_offline_export_and_reuses_matching_session(
     assert len(commands) == 1 and commands[0][1] == "live"
     assert backend.active_render(tmp_path / "full-world" / key) is None
     assert service.owned_record(tmp_path)["dimension"] == "overworld"
+    assert "vantage-" + backend.VERSION in service.owned_record(tmp_path)["render_dir"]
     second = service.start_live_viewer(world, key, "overworld", 8787, tmp_path)
     assert second == first and len(commands) == 1
 

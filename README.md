@@ -2,7 +2,7 @@
 
 ## Native camera-driven living-world viewer (default)
 
-**New baseline:** Minecraft Java save → official Vantage v0.15.1 `live` native tile producer → upstream Three.js viewer → Lively Wallpaper. The viewer indexes the generated chunks in the save, **bakes high-resolution geometry only as tiles are requested**, caches the result and allows the upstream renderer to decide what is visible/resident on the GPU. There is **no required whole-world conversion**, no 8-block sampled substitute terrain and no fixed crop radius.
+**New baseline:** Minecraft Java save → verified Minecraft-26.3-compatible Vantage v0.15.1 `live` native tile producer → upstream Three.js viewer → Lively Wallpaper. The viewer indexes the generated chunks in the save, **bakes high-resolution geometry only as tiles are requested**, caches the result and allows the upstream renderer to decide what is visible/resident on the GPU. There is **no required whole-world conversion**, no 8-block sampled substitute terrain and no fixed crop radius.
 
 This reuses Vantage's own world reader, block models, textures, mesher, tile protocol, tile streaming, lighting and WebGL renderer instead of inventing substitutes. Upstream's default cave horizon removes deeply hidden cave geometry from normal Overworld tiles; subterranean exploration is postponed. Initial live mode does not prebake unvisited chunks in the background. A low-resolution overview is progressively assembled **from requested real tiles** using Vantage's native LOD system, not from an invented coarse terrain sheet.
 
@@ -18,7 +18,15 @@ git pull --ff-only
 .\Launch.cmd
 ~~~
 
-The selected saved world carries over from the earlier app when possible. Choose or edit a **Camera Location** (world coordinates and dimension), then click **Open live viewer**. The launcher installs the SHA-256-pinned upstream native Vantage release on first use if it is missing. The `vantage live` process streams only requested chunk tiles, into a local private per-dimension cache under the app state directory. Selecting a different dimension restarts the native stream for that dimension without discarding previous caches.
+The selected saved world carries over from the earlier app when possible. Choose or edit a **Camera Location** (world coordinates and dimension), then click **Open live viewer**. The launcher installs the SHA-256-pinned, MIT-licensed Vantage compatibility build on first use if it is missing. The `vantage live` process streams only requested chunk tiles, into a local private per-dimension cache under the app state directory. Selecting a different dimension restarts the native stream for that dimension without discarding previous caches.
+
+### Minecraft 26.3 compatibility (zero vertices / empty sky)
+
+The official upstream Vantage **0.15.1** executable predates Minecraft 26.3 Snapshot 7's block-state storage change: vanilla chunk palettes can now contain compact string block IDs and compounds with `id`/`properties`, whereas upstream expects `Name`/`Properties`. Upstream [issue #103](https://github.com/thoughts-on-things/vantage-mc/issues/103) documents the exact symptom: recognized chunks silently mesh into air. Our **`0.15.1-mww263.1`** compatibility build keeps the same upstream native reader, renderer and web frontend and patches only the 26.3 palette interpretation (see [native patch](native/patch_vantage_263.py)).
+
+The binaries are built from the [pinned upstream v0.15.1 Git commit](https://github.com/thoughts-on-things/vantage-mc/tree/953f0ac78d62de751a935b8e8d5be2d711d6fd56), include its MIT license, and are independently SHA-256-pinned in the Python downloader. [Build workflow](.github/workflows/native-vantage-263.yml) runs native Zig decoder tests plus a synthetic Minecraft 26.3 **real conversion and live tile test that asserts nonzero vertices** before release publication.
+
+**After a `git pull`**, close Minecraft and click **Open live viewer** once. The app obtains the patched native executable automatically. A newly versioned cache prevents reuse of empty VTL tiles produced by the original 0.15.1 decoder; you do not need to delete your existing saved world, old caches, or successful offline exports. Visual fidelity in your actual save still requires inspecting the new viewer; no tool here accesses the private save remotely.
 
 There is **no mandatory Build button**. **Export full world (optional)** retains Vantage's normal offline `render` capability for a static map and still uses atomic last-good snapshot publishing. An offline export does not replace the live wallpaper process. Full hidden cave coverage is opt-in on the command line.
 
