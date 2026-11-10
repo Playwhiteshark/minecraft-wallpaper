@@ -144,11 +144,14 @@ def start_viewer(render_dir: Path, port: int, root: Path | None = None) -> str:
 
 
 LIVE_DIMENSIONS = frozenset(("overworld", "the_nether", "the_end"))
+# Exposed-surface skirt, not an underground cave renderer. Keep editable.
+SURFACE_DEPTH_BLOCKS = 16
 
 
 def live_command(binary: Path, world: Path, cache: Path, port: int,
                  dimension: str, memory_mib: int = 768,
-                 assets: Path | None = None) -> list[str]:
+                 assets: Path | None = None,
+                 surface_depth: int = SURFACE_DEPTH_BLOCKS) -> list[str]:
     """Vantage's native lazy tile producer, not an invented Python mesher.
 
     Full saved-world coordinates are indexed but only requested tiles are baked.
@@ -160,12 +163,19 @@ def live_command(binary: Path, world: Path, cache: Path, port: int,
         raise ValueError("Unknown Minecraft dimension")
     if not 256 <= memory_mib <= 8192:
         raise ValueError("Live tile memory budget must be 256–8192 MiB")
+    if not 1 <= surface_depth <= 64:
+        raise ValueError("Surface skirt must be 1–64 blocks")
     command = [
         str(binary), "live", str(world), "--out", str(cache),
         "--host", "127.0.0.1", "--port", str(port),
         "--dimension", dimension, "--memory", str(memory_mib),
         "--prebake", "off", "--lod", "on", "--players", "off",
     ]
+    if dimension == "overworld":
+        # Native Vantage still reads genuine 3D chunks for model/lighting and
+        # emits surface faces plus a shallow, terrain-aware skirt. No extra
+        # underground walls, no fabricated flat heightfield or fake bottom.
+        command.extend(["--surface-depth", str(surface_depth)])
     if assets is not None:
         command.extend(["--assets", str(assets)])
     return command
