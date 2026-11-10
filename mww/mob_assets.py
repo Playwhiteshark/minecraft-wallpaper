@@ -117,8 +117,30 @@ def _main_texture_candidates(record, model):
             f'minecraft:textures/entity/horse/horse_{variant}{baby}.png',
             f'minecraft:textures/entity/horse/horse_{variant}.png',
         ])
-    elif kind == 'wolf' and record.get('tame') == 'tamed':
-        options.append('minecraft:textures/entity/wolf/wolf_tame' + baby + '.png')
+    elif kind == 'wolf':
+        raw = record.get('variant')
+        variety = raw.rsplit(':', 1)[-1] if isinstance(raw, str) else ''
+        allowed = {'pale', 'woods', 'ashen', 'black', 'chestnut',
+                   'rusty', 'snowy', 'spotted', 'striped'}
+        prefix = 'wolf' if variety not in allowed or variety == 'pale' else 'wolf_' + variety
+        if record.get('tame') == 'tamed':
+            options.extend([
+                f'minecraft:textures/entity/wolf/{prefix}_tame{baby}.png',
+                f'minecraft:textures/entity/wolf/{prefix}_tame.png',
+            ])
+        options.extend([
+            f'minecraft:textures/entity/wolf/{prefix}{baby}.png',
+            f'minecraft:textures/entity/wolf/{prefix}.png',
+        ])
+    elif kind == 'parrot':
+        raw = record.get('variant')
+        variants = ('red_blue', 'blue', 'green', 'yellow_blue', 'gray')
+        value = variants[raw] if isinstance(raw, int) and 0 <= raw < len(variants) else (
+            raw.rsplit(':', 1)[-1] if isinstance(raw, str) else 'red_blue')
+        if value in variants:
+            options.append('minecraft:textures/entity/parrot/parrot_' + value + '.png')
+    elif kind == 'fox' and record.get('variant') in ('minecraft:snow','snow'):
+        options.append('minecraft:textures/entity/fox/fox_snow.png')
     if original:
         options.append(original)
     return list(dict.fromkeys(options))
