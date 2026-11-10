@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 
 from .nbt import RegionReader, _uuid_from_nbt, entity_records
@@ -75,6 +76,31 @@ def _tame_status(obj):
     return 'unknown'
 
 
+
+_HARNESS_COLORS = frozenset({
+    'white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime',
+    'pink', 'gray', 'light_gray', 'cyan', 'purple', 'blue', 'brown',
+    'green', 'red', 'black',
+})
+
+
+def _harness_color(obj):
+    """Read the actual happy-ghast body equipment slot, not a visual guess."""
+    equipment = obj.get('equipment') or obj.get('Equipment') or {}
+    body = equipment.get('body') if isinstance(equipment, dict) else None
+    if body is None:
+        body = obj.get('body_armor_item')  # earlier saves
+    if not isinstance(body, dict):
+        return None
+    item_id = body.get('id')
+    if not isinstance(item_id, str):
+        return None
+    name = item_id.removeprefix('minecraft:')
+    if not name.endswith('_harness'):
+        return None
+    color = name[:-len('_harness')]
+    return color if color in _HARNESS_COLORS else None
+
 def _record(obj, bounds, *, scan_all_heights=False):
     name = obj.get('id')
     if not isinstance(name, str) or not name:
@@ -127,6 +153,7 @@ def _record(obj, bounds, *, scan_all_heights=False):
         'baby': bool(obj.get('IsBaby', False) or obj.get('Age', 0) < 0),
         'variant': obj.get('variant', obj.get('Variant', obj.get('CatType'))),
         'collar': obj.get('CollarColor', obj.get('collar_color')),
+        'harness': _harness_color(obj) if kind == 'happy_ghast' else None,
     }
 
 
@@ -183,3 +210,55 @@ def scan_world_mobs(world: Path, dimension: str, centre, radius: int):
     if before != after:
         raise ValueError('World changed during mob scan. Close Minecraft and retry.')
     return mobs
+
+def find_named_mobs(world: Path, dimension: str, query: str, *, max_chunks=50000):
+    """Search saved entity region indexes on demand, not on every wallpaper update.
+
+    This can locate a named pet outside the near-base mob picker radius.
+    Every opened chunk is selected from its region header's populated entries.
+    We do not scan blocks or read full world terrain, nor invent unsaved mobs.
+    """
+    query = str(query).strip()
+    if not 1 <= len(query) <= 120:
+        raise ValueError('Enter a name to find (up to 120 characters).')
+    from .scene import dimension_directory, check_world_closed
+    world = Path(world).expanduser().resolve()
+    check_world_closed(world)
+    directory = dimension_directory(world, dimension) / 'entities'
+    names = []
+    for path in sorted(directory.glob('r.*.*.mca')):
+        m = re.fullmatch(r'r\.(-?\d+)\.(-?\d+)\.mca', path.name)
+        if m:
+            names.append((path, int(m.group(1)), int(m.group(2))))
+    snapshot = [(p, p.stat().st_mtime_ns, p.stat().st_size) for p, _, _ in names]
+    matches = {}
+    count = 0
+    with RegionReader(directory) as reader:
+        for path, rx, rz in names:
+            with path.open('rb') as handle:
+                header = handle.read(4096)
+            if len(header) < 4096:
+                raise ValueError('Corrupt entity region header: ' + path.name)
+            for index in range(1024):
+                if not int.from_bytes(header[index*4:index*4+4], 'big'):
+                    continue
+                count += 1
+                if count > max_chunks:
+                    raise ValueError('Named mob search exceeded its safety limit. Narrow the world or region.')
+                cx = rx * 32 + index % 32
+                cz = rz * 32 + index // 32
+                chunk = reader.chunk(cx, cz)
+                for obj in entity_records(chunk):
+                    if not isinstance(obj, dict):
+                        continue
+                    # Use a broad bounding rectangle only for record validation;
+                    # actual query is by saved custom name.
+                    entry = _record(obj, (-1e15,1e15,None,None,-1e15,1e15),
+                                    scan_all_heights=True)
+                    if entry and entry['name'] and query.casefold() in entry['name'].casefold():
+                        matches.setdefault(entry['key'], entry)
+    after = [(p, p.stat().st_mtime_ns, p.stat().st_size) for p, _, _ in names]
+    check_world_closed(world)
+    if snapshot != after:
+        raise ValueError('World changed during search. Close Minecraft and retry.')
+    return sorted(matches.values(), key=lambda e: (e['name'].casefold(), e['type'], e['key']))
