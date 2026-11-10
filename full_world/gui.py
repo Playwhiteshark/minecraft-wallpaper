@@ -51,7 +51,7 @@ def main():
     converter = VantageConverter(root_dir)
     root = tk.Tk()
     root.title("Minecraft Living World — Full World")
-    root.geometry("940x710")
+    root.geometry("970x810")
     root.minsize(780, 610)
     bg, fg = "#101c2a", "#eef3fa"
     root.configure(bg=bg)
