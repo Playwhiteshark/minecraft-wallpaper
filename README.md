@@ -13,7 +13,7 @@ This reuses Vantage's own world reader, block models, textures, mesher, tile pro
 Close Minecraft before opening the save in this wallpaper app, then update your existing Git checkout:
 
 ~~~powershell
-cd "$env:USERPROFILE\CODING STUFF\minecraft-wallpaper"
+cd "$env:USERPROFILE\\CODING STUFF\\minecraft-wallpaper"
 git pull --ff-only
 .\Launch.cmd
 ~~~
