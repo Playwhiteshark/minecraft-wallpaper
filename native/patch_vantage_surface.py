@@ -43,32 +43,36 @@ def patch_mesh(source: str) -> str:
     /// terrain heights. No geometry emitted below floor, but the original block
     /// grid remains intact for lighting and occlusion. Empty means full-depth.
     surface_floor: []const usize = &.{},
-
-    fn surfaceVisible(ctx: *const MeshCtx, x: usize, y: usize, z: usize) bool {
-        return ctx.surface_floor.len == 0 or
-            y >= ctx.surface_floor[z * ctx.g.sx + x];
-    }
     /// Cave culling:""", "mesh context surface boundary")
+    source = replace_once(source,
+        "/// One thread's slice of the mesh:",
+        """fn surfaceVisible(ctx: *const MeshCtx, x: usize, y: usize, z: usize) bool {
+    return ctx.surface_floor.len == 0 or
+        y >= ctx.surface_floor[z * ctx.g.sx + x];
+}
+
+/// One thread's slice of the mesh:""",
+        "surface predicate helper")
     # Per-block faces and water/lava side walls.
     source = replace_once(source, """                const id = g.ids[g.index(x, y, z)];
                 if (id == grid.AIR) continue;
                 // Pure terrain blocks""",
 """                const id = g.ids[g.index(x, y, z)];
-                if (id == grid.AIR or !ctx.surfaceVisible(x, y, z)) continue;
+                if (id == grid.AIR or !surfaceVisible(ctx, x, y, z)) continue;
                 // Pure terrain blocks""", "per-block surface predicate")
     # Greedy faces (terrain stone/dirt/grass, including all long exposed walls).
     source = replace_once(source, """                const id = g.ids[gi];
                 if (id == grid.AIR) continue;
                 const gf = ctx.greedy_faces[id];""",
 """                const id = g.ids[gi];
-                if (id == grid.AIR or !ctx.surfaceVisible(x, y, z)) continue;
+                if (id == grid.AIR or !surfaceVisible(ctx, x, y, z)) continue;
                 const gf = ctx.greedy_faces[id];""", "greedy surface predicate")
     # Greedy water and lava tops (shared with the same column mask).
     source = replace_once(source, """            const id = g.ids[g.index(x, y, z)];
             if (id == grid.AIR) continue;
             if (kind == .water) {""",
 """            const id = g.ids[g.index(x, y, z)];
-            if (id == grid.AIR or !ctx.surfaceVisible(x, y, z)) continue;
+            if (id == grid.AIR or !surfaceVisible(ctx, x, y, z)) continue;
             if (kind == .water) {""", "fluid surface predicate")
     anchor = "/// Immutable, shareable context for the per-cell mesh pass (read by every thread)."
     function = """/// Compute a continuous, *geometry-only* surface ribbon for an actual 3D
