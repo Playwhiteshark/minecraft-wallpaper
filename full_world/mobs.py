@@ -52,7 +52,11 @@ def installed_client_jar(world: Path, selected: Path | None = None) -> Path | No
                 if jar.stat().st_size > 90_000_000:
                     continue
                 with zipfile.ZipFile(jar) as archive:
-                    if "assets/minecraft/textures/entity/wolf/wolf.png" in archive.namelist():
+                    # Newer Minecraft variants need not include the old wolf
+                    # filename; accept any real vanilla entity PNG in this JAR.
+                    if any(info.filename.startswith("assets/minecraft/textures/entity/")
+                           and info.filename.endswith(".png")
+                           for info in archive.infolist()):
                         return jar
             except (OSError, zipfile.BadZipFile):
                 continue
