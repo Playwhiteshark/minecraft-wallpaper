@@ -125,6 +125,8 @@ def _record(obj, bounds, *, scan_all_heights=False):
         'pos': [round(p, 3) for p in coords],
         'yaw': yaw,
         'baby': bool(obj.get('IsBaby', False) or obj.get('Age', 0) < 0),
+        'variant': obj.get('variant', obj.get('Variant', obj.get('CatType'))),
+        'collar': obj.get('CollarColor', obj.get('collar_color')),
     }
 
 
@@ -155,26 +157,29 @@ def scan_saved_entities(dim: Path, bounds, *, all_heights=False):
     return sorted(results.values(), key=order)
 
 
-def scan_world_mobs(world: Path, dimension: str, centre, radius: int, dimension_directory,
-                    check_world_closed, input_fingerprint):
-    """User-triggered scan, guarded against concurrent save changes."""
+def scan_world_mobs(world: Path, dimension: str, centre, radius: int):
+    """User-triggered, bounded read of saved entities; never modifies the world.
+
+    A scan searches X/Z independently of the detailed render bounds and all
+    saved Y levels. Caller keeps UUIDs in local configuration only.
+    """
     if not 8 <= int(radius) <= 192:
-        raise ValueError('Mob scan radius must be between 8 and 192')
+        raise ValueError('Mob search radius must be between 8 and 192')
     centre = [int(v) for v in centre]
+    radius = int(radius)
     bounds = (centre[0]-radius, centre[0]+radius, None, None,
               centre[2]-radius, centre[2]+radius)
-    # input_fingerprint only needs X/Z ranges to collect matching entity files.
-    dim = dimension_directory(Path(world), dimension)
-    check_world_closed(Path(world))
-    folder = dim / 'entities'
-    from .scene import nearby_files  # source discovery kept with the world adapter
-    paths = list(nearby_files(folder, bounds))
+    from .scene import dimension_directory, check_world_closed, nearby_files
+    world = Path(world).expanduser().resolve()
+    dim = dimension_directory(world, dimension)
+    check_world_closed(world)
+    paths = list(nearby_files(dim / 'entities', bounds))
     def snapshot():
         return [(str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in paths]
     before = snapshot()
     mobs = scan_saved_entities(dim, bounds, all_heights=True)
     after = snapshot()
-    check_world_closed(Path(world))
+    check_world_closed(world)
     if before != after:
         raise ValueError('World changed during mob scan. Close Minecraft and retry.')
     return mobs
