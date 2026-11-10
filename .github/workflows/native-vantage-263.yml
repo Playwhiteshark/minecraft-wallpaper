@@ -2,7 +2,7 @@ name: Build patched native Vantage (Minecraft 26.3)
 
 on:
   push:
-    branches: [fix/minecraft-263-vantage-palettes]
+    branches: [fix/minecraft-263-vantage-palettes, fix/surface-and-263-compact-compounds]
     paths:
       - 'native/**'
       - '.github/workflows/native-vantage-263.yml'
@@ -23,6 +23,7 @@ jobs:
           git clone --depth 1 --branch v0.15.1 https://github.com/thoughts-on-things/vantage-mc.git upstream
           test "$(git -C upstream rev-parse HEAD)" = '953f0ac78d62de751a935b8e8d5be2d711d6fd56'
           python native/patch_vantage_263.py upstream
+          python native/patch_vantage_surface.py upstream
 
       - uses: mlugg/setup-zig@v2.2.1
         with:
@@ -81,5 +82,5 @@ jobs:
           gh release create "$tag" \
             vantage-x86_64-windows.zip vantage-x86_64-linux.tar.gz SHA256SUMS \
             --target "$GITHUB_SHA" \
-            --title "Vantage 0.15.1 + Minecraft 26.3 palette compatibility" \
-            --notes "MIT licensed; Vantage upstream commit 953f0ac78d62de751a935b8e8d5be2d711d6fd56. Applies only native/patch_vantage_263.py (new id/properties and compact string block-state palettes). Includes the original embedded Vantage Three.js viewer, not a replacement engine. Both native Zig tests and real Minecraft 26.3 live tile streaming must pass before publication. Not an upstream Vantage release." 
+            --title "Vantage 0.15.1 + Minecraft 26.3 compact compounds + surface-depth" \
+            --notes "MIT licensed; Vantage upstream commit 953f0ac78d62de751a935b8e8d5be2d711d6fd56. Applies native/patch_vantage_263.py (including empty-key compound palettes) and opt-in native/patch_vantage_surface.py (--surface-depth). Includes the original embedded Vantage Three.js viewer, not a replacement engine. Native Zig tests, two adjacent real 26.3 chunk geometries and reduced-vertex surface live tiles must pass before publication. Not an upstream Vantage release." 
