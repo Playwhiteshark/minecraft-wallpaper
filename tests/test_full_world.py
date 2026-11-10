@@ -129,7 +129,8 @@ def test_never_terminate_unrecognised_pid(tmp_path, monkeypatch):
         "schema": 1, "pid": 424242, "binary": "/foreign/app",
         "render_dir": "/elsewhere", "port": 8787})
     monkeypatch.setattr(service, "_pid_matches", lambda record: False)
-    assert service.stop_viewer(tmp_path)
+    # Stale metadata is cleaned, but no unknown process is ever claimed as killed.
+    assert not service.stop_viewer(tmp_path)
     assert not (tmp_path / service.SERVICE_FILE).exists()
 
 
@@ -319,3 +320,118 @@ def test_mob_overlay_fails_closed_instead_of_inventing_blocks(tmp_path):
     assert data["entities"] == []
     assert data["pack"]["models"] == {}
     assert data["warnings"]
+
+
+
+def test_orphan_identification_requires_exact_engine_cache_host_and_port(tmp_path):
+    from full_world.processes import verified_owned_listener
+    root = tmp_path / "Minecraft Living World"
+    engine = root / "engines" / "vantage-previous-version" / ("vantage.exe" if os.name == "nt" else "vantage")
+    cache = (root / "full-world" / ("a" * 24) / "live-cache" /
+             "vantage-previous-version" / "overworld")
+    engine.parent.mkdir(parents=True)
+    engine.write_bytes(b"app-owned binary placeholder")
+    command = (f'"{engine}" live "C:/Saves/My Minecraft World" '
+               f'--out "{cache}" --port 8787 --host 127.0.0.1 '
+               '--prebake off')
+    candidate = {"pid": 9512, "binary": str(engine), "command_line": command}
+    assert verified_owned_listener(root, 8787, candidate) == 9512
+    assert verified_owned_listener(root, 8788, candidate) is None
+    assert verified_owned_listener(root, 8787, {
+        **candidate, "command_line": command.replace("127.0.0.1", "0.0.0.0")
+    }) is None
+    assert verified_owned_listener(root, 8787, {
+        **candidate, "binary": str(tmp_path / "foreign" / "vantage")
+    }) is None
+    assert verified_owned_listener(root, 8787, {
+        **candidate, "command_line": command.replace(
+            str(cache), str(tmp_path / "foreign" / "cache"))
+    }) is None
+    assert verified_owned_listener(root, 8787, {
+        **candidate, "command_line": command.replace(" live ", " render ")
+    }) is None
+
+
+def test_orphan_recovery_without_pid_file_stops_only_verified_listener(tmp_path, monkeypatch):
+    from full_world import processes
+    state = {"listening": True, "killed": []}
+    monkeypatch.setattr(service, "ping", lambda port: state["listening"])
+    monkeypatch.setattr(processes, "listening_owned_pid",
+                        lambda root, port: 9512 if state["listening"] else None)
+    def kill(pid, sig):
+        state["killed"].append(pid)
+        state["listening"] = False
+    monkeypatch.setattr(service.os, "kill", kill)
+    if os.name == "nt":
+        def fake_run(args, **kwargs):
+            assert args[:2] == ["taskkill", "/PID"] and args[2] == "9512"
+            kill(9512, None)
+            return type("Result", (), {"returncode": 0, "stderr": ""})()
+        monkeypatch.setattr(service.subprocess, "run", fake_run)
+    assert service.stop_viewer(tmp_path, port=8787)
+    assert state["killed"] == [9512]
+    assert not service.ping(8787)
+
+
+def test_foreign_listener_is_not_killed_or_claimed(tmp_path, monkeypatch):
+    from full_world import processes
+    monkeypatch.setattr(service, "ping", lambda port: True)
+    monkeypatch.setattr(processes, "listening_owned_pid", lambda root, port: None)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Never kill a process just because it owns port 8787")
+    monkeypatch.setattr(service.os, "kill", forbidden)
+    assert service.stop_viewer(tmp_path, port=8787) is False
+
+
+def test_owned_shutdown_preserves_record_if_process_remains(tmp_path, monkeypatch):
+    from full_world import processes
+    from full_world.backend import ConversionError
+    backend.write_json_atomic(tmp_path / service.SERVICE_FILE, {
+        "schema": 1, "pid": 9512, "binary": "/test/engine",
+        "render_dir": "/test/render", "port": 8787})
+    monkeypatch.setattr(service, "_pid_matches", lambda rec: True)
+    monkeypatch.setattr(service, "ping", lambda port: True)
+    monkeypatch.setattr(processes, "listening_owned_pid", lambda root, port: None)
+    monkeypatch.setattr(service.os, "kill", lambda pid, sig: None)
+    if os.name == "nt":
+        monkeypatch.setattr(service.subprocess, "run", lambda *args, **kwargs:
+                            type("Result", (), {"returncode": 0, "stderr": ""})())
+    monkeypatch.setattr(service.time, "sleep", lambda delay: None)
+    with pytest.raises(ConversionError, match="ownership record was preserved"):
+        service.stop_viewer(tmp_path)
+    assert service.owned_record(tmp_path)["pid"] == 9512
+
+
+def test_restart_reclaims_older_verified_viewer_and_reuses_port(tmp_path, monkeypatch):
+    world = tmp_path / "Save"
+    world.mkdir()
+    (world / "level.dat").write_bytes(b"fixture")
+    new_engine = tmp_path / "new" / "vantage"
+    new_engine.parent.mkdir()
+    new_engine.write_bytes(b"mock new executable")
+    monkeypatch.setattr(service, "require_engine", lambda *args, **kw: new_engine)
+    monkeypatch.setattr(service, "prepare_client_assets", lambda *args, **kw: None)
+    monkeypatch.setattr(service, "check_world_closed", lambda *args: None)
+    monkeypatch.setattr(service, "_live_manifest_ready", lambda port: True)
+    monkeypatch.setattr(service, "_pid_matches", lambda record: True)
+    state = {"busy": True, "recovered": [], "launches": []}
+    monkeypatch.setattr(service, "ping", lambda port: state["busy"])
+    def stop(root, *, port):
+        state["recovered"].append(port)
+        state["busy"] = False
+        return True
+    monkeypatch.setattr(service, "stop_viewer", stop)
+    class Process:
+        pid = 9999
+        def poll(self): return None
+    def launch(command, **kwargs):
+        state["launches"].append(command)
+        state["busy"] = True
+        return Process()
+    monkeypatch.setattr(service.subprocess, "Popen", launch)
+    monkeypatch.setattr(service.time, "sleep", lambda seconds: None)
+    address = service.start_live_viewer(
+        world, "a" * 24, "overworld", 8787, tmp_path)
+    assert address == "http://127.0.0.1:8787/"
+    assert state["recovered"] == [8787]
+    assert state["launches"][0][1] == "live"

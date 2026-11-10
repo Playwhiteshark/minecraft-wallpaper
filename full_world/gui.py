@@ -72,6 +72,7 @@ def main():
     fields = {k: tk.StringVar() for k in
               ("x", "y", "z", "distance", "rotation", "tilt")}
     startup = tk.BooleanVar(value=bool(registry.get("startup", False)))
+    keep_running = tk.BooleanVar(value=bool(registry.get("keep_running", False)))
     status = tk.StringVar(value="Ready. Open the camera-driven viewer; full-world export is optional.")
     info = tk.StringVar(value="No world selected")
     busy = [False]
@@ -273,7 +274,12 @@ def main():
                     root.clipboard_clear()
                     root.clipboard_append(url)
                     root.update()
-                    status.set("Copied the live camera URL for Lively's Web Page wallpaper.")
+                    # Keep the native loopback renderer alive for Lively after
+                    # closing the controller; make this explicitly visible.
+                    keep_running.set(True)
+                    registry["keep_running"] = True
+                    save()
+                    status.set("Copied Lively URL. Native renderer stays running after this window closes.")
                     messagebox.showinfo(
                         "Lively Wallpaper",
                         "Web URL copied:\n" + url +
@@ -333,6 +339,14 @@ def main():
             status.set("Saved camera locally. Use Open or Copy Lively URL for this view.")
         except Exception as exc:
             messagebox.showerror("Camera", str(exc))
+
+    def toggle_keep_running():
+        registry["keep_running"] = bool(keep_running.get())
+        save()
+        if keep_running.get():
+            status.set("Lively mode: closing this window keeps the native renderer running.")
+        else:
+            status.set("Preview mode: closing this window stops the native renderer.")
 
     def toggle_startup():
         try:
@@ -413,6 +427,11 @@ def main():
     ttk.Button(row, text="Open live viewer", command=open_view).pack(side="left")
     ttk.Button(row, text="Copy Lively Web URL", command=copy_link).pack(side="left", padx=8)
     ttk.Button(row, text="Stop viewer", command=stop).pack(side="left")
+    ttk.Checkbutton(
+        body,
+        text="Keep native renderer running after closing this window (for Lively)",
+        variable=keep_running, command=toggle_keep_running,
+    ).pack(anchor="w", pady=(8, 2))
     ttk.Checkbutton(body, text="Start the native viewer at Windows login (optional)",
                     variable=startup, command=toggle_startup).pack(anchor="w", pady=8)
     ttk.Separator(body).pack(fill="x", pady=12)
@@ -424,6 +443,16 @@ def main():
             messagebox.showwarning("Conversion is active",
                                    "The saved-world conversion is active. Close after it completes to protect the output.")
             return
+        if not keep_running.get():
+            try:
+                stop_viewer(root_dir, port=int(registry.get("port", 8787)))
+            except Exception as exc:
+                messagebox.showerror(
+                    "Native Vantage is still running",
+                    "Could not stop the renderer safely:\n" + str(exc) +
+                    "\n\nUse Stop viewer or enable Keep native renderer running "
+                    "if you intentionally want it to serve Lively.")
+                return
         root.destroy()
     root.protocol("WM_DELETE_WINDOW", on_close)
     show_world()

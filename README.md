@@ -20,6 +20,26 @@ git pull --ff-only
 
 The selected saved world carries over from the earlier app when possible. Choose or edit a **Camera Location** (world coordinates and dimension), then click **Open live viewer**. The launcher installs the SHA-256-pinned, MIT-licensed Vantage compatibility build on first use if it is missing. The `vantage live` process streams only requested chunk tiles, into a local private per-dimension cache under the app state directory. Selecting a different dimension restarts the native stream for that dimension without discarding previous caches.
 
+### Native viewer lifetime and port 8787
+
+**Closing the control panel now stops the native Vantage process by default.** The browser tab may remain open, but the preview server no longer runs in the background. This prevents an invisible native executable from blocking subsequent launches.
+
+**Lively is intentionally different:** when you click **Copy Lively Web URL**, the controller enables the visible checkbox **Keep native renderer running after closing this window (for Lively)**. Leave it checked while Lively displays that web wallpaper. Uncheck it when you want closing the control panel to stop the renderer; **Stop viewer** always requests immediate shutdown. Windows login startup via `--serve` also intentionally keeps the native process alive independently of the controller.
+
+When upgrading from an older app version, an orphaned renderer may still occupy loopback port 8787 without a valid PID record. The updated starter checks the actual Windows TCP listener's PID and verifies its executable is a versioned Vantage binary installed **under this app's private engine directory**, launched with the matching `--port`, `--host 127.0.0.1`, and `--out` pointing inside this app's native world tile cache. **Only this proven-owned process is stopped automatically.** A different server on the same port is never killed.
+
+If the port is still occupied, inspect it in PowerShell instead of terminating arbitrary processes:
+
+~~~powershell
+Get-NetTCPConnection -State Listen -LocalPort 8787 |
+    Select-Object LocalAddress,LocalPort,OwningProcess
+# Substitute the PID actually shown:
+Get-CimInstance Win32_Process -Filter "ProcessId=12345" |
+    Select-Object ProcessId,ExecutablePath,CommandLine
+~~~
+
+If the path and command identify this app's own Vantage renderer, the app's **Stop viewer** button or `py -3 full_world.py --stop` should stop it. Do not blindly use `taskkill /IM vantage.exe` or stop all processes on the port; unrelated viewers may exist.
+
 ### Shader preview, important saved mobs, and horizon haze
 
 The native Vantage viewer now includes a **wallpaper look** panel, with Vanilla/Cinematic/Misty shader presets and live controls for sun relief, sun warmth and direction, haze start, haze softness, and haze amount. The shader uses real Minecraft lighting/AO and the existing Three.js material path. This is an appearance preview, **not** true dynamic cast shadows or global illumination.
