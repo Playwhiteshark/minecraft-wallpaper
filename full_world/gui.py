@@ -371,7 +371,7 @@ def main():
               wraplength=865).pack(anchor="w", pady=(0, 8))
 
     ttk.Label(body, text="2   OPTIONAL OFFLINE EXPORT", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=5)
-    ttk.Label(body, text="Not needed to open the viewer. Exports all saved chunks for an offline map. Live viewing converts only requested tiles; deep caves are excluded by default.",
+    ttk.Label(body, text="Optional complete-world export. Live viewing streams camera-visible tiles and meshes the real Overworld surface (16-block depth; no deep underground columns).",
               wraplength=860).pack(anchor="w", pady=3)
     build_button = ttk.Button(body, text="Export full world (optional)", command=run_build)
     build_button.pack(anchor="w", pady=(7, 16))
