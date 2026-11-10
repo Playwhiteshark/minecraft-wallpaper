@@ -20,6 +20,17 @@ git pull --ff-only
 
 The selected saved world carries over from the earlier app when possible. Choose or edit a **Camera Location** (world coordinates and dimension), then click **Open live viewer**. The launcher installs the SHA-256-pinned, MIT-licensed Vantage compatibility build on first use if it is missing. The `vantage live` process streams only requested chunk tiles, into a local private per-dimension cache under the app state directory. Selecting a different dimension restarts the native stream for that dimension without discarding previous caches.
 
+### Surface-first 3D geometry (default live wallpaper)
+
+The current compatibility build applies two narrowly scoped native patches to the unchanged Vantage pipeline:
+
+- [26.3 palette decoder](native/patch_vantage_263.py) recognizes compact TAG_String blocks, renamed id/properties compounds, **and the empty-key block ID compound form**. Missing this last form could silently drop saved chunks and leave disconnected vertical columns.
+- [Surface ribbon mesher](native/patch_vantage_surface.py) adds optional \`--surface-depth 16\` to **Overworld live viewing only**. It emits faces only near the actual topmost block of each X/Z column, extending down when lower adjacent saved terrain exposes a genuine cliff. It never fabricates topsoil, fills empty chunks, or creates artificial bottom faces. The existing native block grid is still read for lighting, model resolution and hidden-face culling.
+
+The default is a 16-block-deep surface ribbon, not a full-height terrain extrusion; deep caves and underground exploration are deferred. This is **geometry suppression**, not an implementation of Minecraft's entire world generation system. A separate native engine version and local cache namespace prevent reuse of previous empty or full-height tiles.
+
+The native CI test now creates two adjacent real Minecraft DataVersion 5023 chunks (including the empty-key compound palette encoding), checks nonzero geometry from both native and live paths, and asserts that surface live tiles have fewer vertices than the full-depth offline rendering. The original Vantage embedded Three.js renderer remains unchanged.
+
 ### Minecraft 26.3 compatibility (zero vertices / empty sky)
 
 The official upstream Vantage **0.15.1** executable predates Minecraft 26.3 Snapshot 7's block-state storage change: vanilla chunk palettes can now contain compact string block IDs and compounds with `id`/`properties`, whereas upstream expects `Name`/`Properties`. Upstream [issue #103](https://github.com/thoughts-on-things/vantage-mc/issues/103) documents the exact symptom: recognized chunks silently mesh into air. Our **`0.15.1-mww263.1`** compatibility build keeps the same upstream native reader, renderer and web frontend and patches only the 26.3 palette interpretation (see [native patch](native/patch_vantage_263.py)).
