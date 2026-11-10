@@ -91,12 +91,21 @@
       const imageSize=part.texture||dimensions;
       for(const cube of part.cubes||[]){
         if(!cube.origin||!cube.size||!cube.uv)continue;
+        const centreRaw=cube.origin.map((v,i)=>v+cube.size[i]/2);
+        function toWorld(raw){
+          let p=raw;
+          for(let i=transforms.length-1;i>=0;i--)p=transform(p,transforms[i]);
+          return world(p);
+        }
+        const cubeCentre=toWorld(centreRaw);
         for(const face of cubeFaces(cube)){
-          const pts=face.points.map(p=>{
-            for(let i=transforms.length-1;i>=0;i--)p=transform(p,transforms[i]);
-            return world(p);
-          });
-          const n=unit(cross(sub(pts[1],pts[0]),sub(pts[2],pts[0])));
+          const pts=face.points.map(toWorld);
+          const faceCentre=[0,1,2].map(i=>
+            (pts[0][i]+pts[1][i]+pts[2][i]+pts[3][i])/4);
+          // UV face winding isn't guaranteed to be outward after the
+          // vanilla model's mirror/negative scale. Centre-to-face normals
+          // are outward even for nested rotations and mirrored model parts.
+          const n=unit(sub(faceCentre,cubeCentre));
           const [u,v,uw,vh]=face.uv;
           // Pixel-edge inset avoids bleeding into adjacent skin regions.
           const eps=Math.min(.08,uw*.03,vh*.03);
