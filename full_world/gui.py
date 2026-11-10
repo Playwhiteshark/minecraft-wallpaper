@@ -30,6 +30,7 @@ def migrate_selected_legacy_world(state: dict):
         if not path.is_dir() or not (path / "level.dat").is_file():
             return
         key, world = register_world(state, path)
+        world["jar"] = legacy.get("jar") or ""
         shot = legacy["shots"][legacy.get("selected", 0)]
         home = world["views"][0]
         for field in ("x", "y", "z"):
@@ -66,6 +67,7 @@ def main():
 
     selected_world = tk.StringVar()
     selected_view = tk.StringVar()
+    jar_var = tk.StringVar()
     dimension_var = tk.StringVar(value="overworld")
     fields = {k: tk.StringVar() for k in
               ("x", "y", "z", "distance", "rotation", "tilt")}
@@ -103,6 +105,7 @@ def main():
         try:
             _, world, current = current_world(registry, root_dir)
             info.set(f'World: {world["name"]} · {"Rendered" if current else "Needs rendering"} · {world["path"]}')
+            jar_var.set(world.get("jar", ""))
             view_entries.extend(world.get("views", []))
             view_combo["values"] = [view["name"] for view in view_entries]
             if view_entries:
@@ -190,6 +193,8 @@ def main():
         try:
             key, world, _ = current_world(registry, root_dir)
             world_path = Path(world["path"])
+            world["jar"] = jar_var.get().strip()
+            save()
         except Exception as exc:
             messagebox.showerror("Full-world render", str(exc))
             return
@@ -202,6 +207,7 @@ def main():
             error, result, url = None, None, None
             try:
                 result = converter.render(world_path, key, allow_download=True,
+                                          client_jar=Path(world["jar"]) if world.get("jar") else None,
                                           on_progress=notify)
                 url = start_viewer(result.directory, int(registry.get("port", 8787)), root_dir)
             except Exception as exc:
@@ -320,7 +326,20 @@ def main():
     world_combo.bind("<<ComboboxSelected>>", select_world)
     ttk.Button(row, text="Browse…", command=browse).pack(side="left", padx=(6, 0))
     ttk.Button(row, text="Discover", command=discover).pack(side="left", padx=(6, 0))
-    ttk.Label(body, textvariable=info, wraplength=865).pack(anchor="w", pady=(7, 13))
+    ttk.Label(body, textvariable=info, wraplength=865).pack(anchor="w", pady=(7, 8))
+    row = ttk.Frame(body)
+    row.pack(fill="x", pady=(0, 9))
+    ttk.Label(row, text="Minecraft client JAR", width=20).pack(side="left")
+    ttk.Entry(row, textvariable=jar_var).pack(side="left", fill="x", expand=True)
+    def choose_jar():
+        jar = filedialog.askopenfilename(
+            title="Optional: choose installed Minecraft client version JAR",
+            filetypes=[("Minecraft client JAR", "*.jar")])
+        if jar:
+            jar_var.set(jar)
+    ttk.Button(row, text="Browse…", command=choose_jar).pack(side="left", padx=(5, 0))
+    ttk.Label(body, text="Optional. Leave empty to let Vantage discover your installed vanilla assets.",
+              wraplength=865).pack(anchor="w", pady=(0, 8))
 
     ttk.Label(body, text="2   COMPLETE WORLD CONVERSION", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=5)
     ttk.Label(body, text="Uses the pinned Vantage native executable. All saved generated chunks; no crop radius or 8-block sampling.",
