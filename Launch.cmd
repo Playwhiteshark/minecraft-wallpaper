@@ -3,9 +3,9 @@ setlocal
 cd /d "%~dp0"
 where py >nul 2>nul
 if %errorlevel%==0 (
-    py -3 app.py
+    py -3 full_world.py %*
 ) else (
-    python app.py
+    python full_world.py %*
 )
 if errorlevel 1 pause
 endlocal
