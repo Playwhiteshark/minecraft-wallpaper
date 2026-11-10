@@ -449,8 +449,8 @@ def main():
             except Exception as exc:
                 messagebox.showerror(
                     "Native Vantage is still running",
-                    "Could not stop the renderer safely:\\n" + str(exc) +
-                    "\\n\\nUse Stop viewer or enable Keep native renderer running "
+                    "Could not stop the renderer safely:\n" + str(exc) +
+                    "\n\nUse Stop viewer or enable Keep native renderer running "
                     "if you intentionally want it to serve Lively.")
                 return
         root.destroy()
