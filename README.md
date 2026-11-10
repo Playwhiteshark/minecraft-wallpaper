@@ -1,14 +1,16 @@
 # Minecraft Living World Wallpaper
 
-## Full saved-world application (default)
+## Native camera-driven living-world viewer (default)
 
-**This is the new basic pipeline:** real Minecraft save → upstream Vantage native converter → full saved/generated chunk tiles and native game textures → upstream Three.js renderer → Lively Wallpaper. It is **not** the old cropped 24-block island or the discontinued 8-block sampling system.
+**New baseline:** Minecraft Java save → official Vantage v0.15.1 `live` native tile producer → upstream Three.js viewer → Lively Wallpaper. The viewer indexes the generated chunks in the save, **bakes high-resolution geometry only as tiles are requested**, caches the result and allows the upstream renderer to decide what is visible/resident on the GPU. There is **no required whole-world conversion**, no 8-block sampled substitute terrain and no fixed crop radius.
 
-**Status:** implemented as an independent modular application. The actual saved-world and Lively appearance has **not been visually accepted yet**. This is not Minecraft itself or an Iris/Complementary shaderpack.
+This reuses Vantage's own world reader, block models, textures, mesher, tile protocol, tile streaming, lighting and WebGL renderer instead of inventing substitutes. Upstream's default cave horizon removes deeply hidden cave geometry from normal Overworld tiles; subterranean exploration is postponed. Initial live mode does not prebake unvisited chunks in the background. A low-resolution overview is progressively assembled **from requested real tiles** using Vantage's native LOD system, not from an invented coarse terrain sheet.
 
-### Run on Windows
+**Current verification:** Automated unit tests and a native CLI integration test exercise the code, but visual acceptance of the actual user's saved world in Windows/Lively remains separate. If upstream Vantage cannot read a recent Minecraft chunk format or find compatible client assets, the app must show native diagnostics rather than display fake terrain.
 
-Keep Minecraft closed, then run from your existing Git checkout:
+### Start on Windows
+
+Close Minecraft before opening the save in this wallpaper app, then update your existing Git checkout:
 
 ~~~powershell
 cd "$env:USERPROFILE\CODING STUFF\minecraft-wallpaper"
@@ -16,27 +18,35 @@ git pull --ff-only
 .\Launch.cmd
 ~~~
 
-Choose your save (the old selected save is reused when possible), optionally supply the exact local **Minecraft client JAR** for matching textures, then click **Build full saved world**. The application downloads the pinned official **Vantage v0.15.1 native Windows CLI ZIP (about 1 MB)** once, verifies the upstream SHA-256, and keeps the executable in private application data. It converts **all saved/generated chunks**, not merely the base radius. Missing or unexplored areas are never invented. A failed conversion preserves the previous render.
+The selected saved world carries over from the earlier app when possible. Choose or edit a **Camera Location** (world coordinates and dimension), then click **Open live viewer**. The launcher installs the SHA-256-pinned upstream native Vantage release on first use if it is missing. The `vantage live` process streams only requested chunk tiles, into a local private per-dimension cache under the app state directory. Selecting a different dimension restarts the native stream for that dimension without discarding previous caches.
 
-Click **Open full-world viewer** to navigate the actual saved world. The upstream renderer includes terrain materials, biome colour, saved lighting, caves, multiple dimensions and on-demand tile streaming. Choose and save separate camera locations in the control panel.
+There is **no mandatory Build button**. **Export full world (optional)** retains Vantage's normal offline `render` capability for a static map and still uses atomic last-good snapshot publishing. An offline export does not replace the live wallpaper process. Full hidden cave coverage is opt-in on the command line.
 
-For Lively, choose **Copy Lively Web URL**, then in Lively select **Add Wallpaper → Web Page** and paste it. The URL is loopback-only (http://127.0.0.1:8787/). A small native Vantage viewer process must remain running while the wallpaper is displayed; the control panel itself can close. Enable **Start at Windows login** only if you want the native viewer to restart automatically after reboot.
+In Lively, use **Copy Lively Web URL**, then **Add Wallpaper → Web Page** and paste the local camera URL. The native Vantage web server binds to **127.0.0.1:8787**; the control panel can close while Vantage stays alive. The optional **Start at Windows login** option restarts the camera-driven `live` viewer (not a world export). This is not an HTTP-accessible public web service.
 
-Command-line equivalents:
+### Commands
 
 ~~~powershell
+py -3 full_world.py --open        # Live streaming; opens the browser
+py -3 full_world.py --serve       # Live streaming; suitable for login startup
 py -3 full_world.py --status
-py -3 full_world.py --build
-py -3 full_world.py --open
-py -3 full_world.py --serve
 py -3 full_world.py --stop
+py -3 full_world.py --build       # Optional full saved-world offline export
+py -3 full_world.py --build --caves-full # Optional deep caves in offline export
 ~~~
 
-**Scope:** entire saved-world chunk coverage, genuine GPU textured geometry, upstream camera streaming/LOD, cave views, dimensions, multi-world selection, camera bookmarks and reversible render snapshots. The existing selected mob models (including happy-ghast harnesses and cats), selected-mob UI, custom shaders and small-pet circles are **not yet integrated into the new full-world viewer**. They remain in **Legacy-Prototype.cmd** pending modular overlay integration. This first version deliberately prioritises a genuine working world over cosmetics.
+`--jar` specifies the installed local Minecraft client JAR for native texture extraction; otherwise Vantage discovers installed vanilla assets itself. `--memory` bounds Vantage's tile working sets, not the GPU's tile cache. The default live mode never sends save files or Minecraft textures to the cloud.
 
-**Overhead:** existing Python 3.10+ and Tkinter for the control panel; short-lived native Vantage converter and the same small native executable serving its embedded Three.js viewer at 127.0.0.1 while the wallpaper is active. No Minecraft client, Node, Java or additional standalone 3D desktop app needs to remain running.
+### Accuracy and implementation boundaries
 
-Vantage is MIT-licensed and downloaded from its official release rather than redistributed. Client texture assets are never committed to this repository. Architecture and limitations: [Full-world architecture](docs/FULL-WORLD-ARCHITECTURE.md). The **highest engineering rule** is to reuse maintained libraries first unless their build, runtime or licensing overhead demonstrably outweighs the benefit: [AGENTS.md](AGENTS.md).
+- **Real saved-world geometry:** native Minecraft-compatible block models, state-dependent textures, lighting and biome shading, subject to the pinned Vantage version's format coverage.
+- **Camera-driven work:** no forced conversion of every saved chunk; requests are served from real Anvil regions and cached. Vantage's own renderer performs distance/memory-residency planning. Extra frustum/occlusion optimizations can be added later without changing the world reader.
+- **Surface-first:** no `--caves full` in the live path. Existing native cave culling protects ordinary surface scenes; caves and underground slice support remain future opt-ins.
+- **Unchanged legacy prototype:** the earlier small crop renderer and its selected-mob features remain separately launchable as **Legacy-Prototype.cmd**. The full native viewer does not yet integrate the custom mob overlays, shader presets, or pet circles.
+- **Source safety:** the original save stays read-only; only local cache/output directories change. The renderer's live process does not run a Minecraft client.
+- **Known limit:** a `live` session opens a single dimension at a time; camera changes between dimensions restart that session. The local `live` stream doesn't automatically watch edits to a world while Minecraft is open.
+
+Architecture and precise boundaries: [Full-world architecture](docs/FULL-WORLD-ARCHITECTURE.md). The highest engineering rule remains reuse of proven maintained code: [AGENTS.md](AGENTS.md).
 
 ---
 
