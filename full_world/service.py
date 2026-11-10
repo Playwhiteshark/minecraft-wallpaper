@@ -56,10 +56,10 @@ def occupied_port_message(root: Path, port: int) -> str:
     details = listener_report(root, port)
     pid = details.get("pid")
     return (
-        f"Port {port} still has a listening process. Nothing was killed.\\n"
-        + (f"Listening PID: {pid}\\n" if pid else "Listening PID: unavailable\\n")
-        + f"Executable: {details.get('binary', 'unavailable')}\\n"
-        + f"Ownership check: {details.get('reason', 'unknown')}\\n"
+        f"Port {port} still has a listening process. Nothing was killed.\n"
+        + (f"Listening PID: {pid}\n" if pid else "Listening PID: unavailable\n")
+        + f"Executable: {details.get('binary', 'unavailable')}\n"
+        + f"Ownership check: {details.get('reason', 'unknown')}\n"
         + "Run 'py -3 full_world.py --port-status' to inspect its command "
         "and determine whether it is an old app-owned Vantage process."
     )
@@ -182,11 +182,8 @@ def start_viewer(render_dir: Path, port: int, root: Path | None = None) -> str:
         # A foreign listener is left intact and diagnosed, never killed.
         stop_viewer(root, port=port)
         time.sleep(0.2)
-    if ping(port):
-        raise ConversionError(
-            f"Port {port} is occupied by an unrecognized process. "
-            "It was not terminated. Inspect the port's owning PID before "
-            "choosing another port or stopping that process.")
+    if ping(port) or port_is_listening(port):
+        raise ConversionError(occupied_port_message(root, port))
     command = [str(binary), "serve", str(render_dir),
                "--host", "127.0.0.1", "--port", str(port)]
     log = (root / "full-world-service.log").open("ab")
@@ -320,7 +317,7 @@ def start_live_viewer(world: Path, world_key: str, dimension: str, port: int,
                 _live_manifest_ready(port)):
             return address
 
-    if record or ping(port):
+    if record or ping(port) or port_is_listening(port):
         # Old versions of this app deliberately detached Vantage for Lively.
         # After updating the executable they may have a stale/lost PID record.
         # The orphan probe inspects the *actual socket owner*, checks that it
@@ -328,11 +325,8 @@ def start_live_viewer(world: Path, world_key: str, dimension: str, port: int,
         # stops it safely. It does not touch any foreign Vantage instance.
         stop_viewer(root, port=port)
         time.sleep(0.2)
-    if ping(port):
-        raise ConversionError(
-            f"Port {port} is in use by a process not verified as this app's "
-            "renderer. Nothing was killed. Check the port's owning PID or "
-            "change the configured port.")
+    if ping(port) or port_is_listening(port):
+        raise ConversionError(occupied_port_message(root, port))
 
     log_path = root / "full-world-service.log"
     root.mkdir(parents=True, exist_ok=True)
