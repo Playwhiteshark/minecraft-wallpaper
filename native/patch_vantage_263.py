@@ -55,17 +55,19 @@ test "Minecraft 26.3 compact and renamed palette entries preserve actual blocks"
     defer arena.deinit();
     const a = arena.allocator();
 
+    var old_properties = [_]nbt.Entry{
+        .{ .name = "axis", .tag = .{ .string = "x" } },
+    };
+    var new_properties = [_]nbt.Entry{
+        .{ .name = "axis", .tag = .{ .string = "z" } },
+    };
     var old_block = [_]nbt.Entry{
         .{ .name = "Name", .tag = .{ .string = "minecraft:oak_log" } },
-        .{ .name = "Properties", .tag = .{ .compound = &.{
-            .{ .name = "axis", .tag = .{ .string = "x" } },
-        } } },
+        .{ .name = "Properties", .tag = .{ .compound = &old_properties } },
     };
     var new_block = [_]nbt.Entry{
         .{ .name = "id", .tag = .{ .string = "minecraft:oak_log" } },
-        .{ .name = "properties", .tag = .{ .compound = &.{
-            .{ .name = "axis", .tag = .{ .string = "z" } },
-        } } },
+        .{ .name = "properties", .tag = .{ .compound = &new_properties } },
     };
     var old_palette = [_]nbt.Tag{.{ .compound = &old_block }};
     var new_palette = [_]nbt.Tag{.{ .compound = &new_block }};
