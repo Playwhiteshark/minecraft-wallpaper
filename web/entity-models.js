@@ -76,7 +76,7 @@
     const yaw=rad(Number(entity.yaw)||0);
     function world(raw){
       const normalized=applyModelTransform(raw,model.transform);
-      const baby=entity.baby?.55:1; // proportion fallback until baby-model mapping is available
+      const baby=entity.baby ? .55 : 1; // proportion fallback until baby-model mapping is available
       const x=normalized[0]*baby,z=normalized[2]*baby,y=normalized[1]*baby;
       const ca=Math.cos(yaw),sa=Math.sin(yaw);
       return [
