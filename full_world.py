@@ -28,6 +28,7 @@ def main(argv=None) -> int:
     group.add_argument("--status", action="store_true", help="Print registered render and viewer status")
     group.add_argument("--open", action="store_true", help="Start viewer and open in browser")
     parser.add_argument("--world", type=Path, help="Register a Minecraft save folder first")
+    parser.add_argument("--jar", type=Path, help="Optional installed Minecraft client JAR")
     parser.add_argument("--memory", type=int, default=768,
                         help="Offline converter memory budget in MiB (256–8192)")
     args = parser.parse_args(argv)
@@ -54,8 +55,10 @@ def main(argv=None) -> int:
             key, world, folder = current_world(state, root)
             if args.build:
                 converter = VantageConverter(root)
+                jar = args.jar or (Path(world["jar"]) if world.get("jar") else None)
                 result = converter.render(Path(world["path"]), key,
                                           allow_download=True, memory_mib=args.memory,
+                                          client_jar=jar,
                                           on_progress=print)
                 folder = result.directory
             if folder is None:
