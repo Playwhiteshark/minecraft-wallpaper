@@ -456,3 +456,32 @@ def test_no_minecraft_model_is_redistributed_in_source(tmp_path):
     from mww.mob_assets import load_model
     model,error=load_model('../not_a_model',tmp_path,fetch_missing=False)
     assert model is None and error
+
+
+def test_same_display_name_worlds_do_not_share_mob_choices(tmp_path, monkeypatch):
+    import shutil
+    from mww.entities import scan_world_mobs
+    first_folder=tmp_path/'one'
+    first_folder.mkdir()
+    world,jar=make_world(first_folder)
+    copy=tmp_path/'two'/'Synthetic Example World'
+    copy.parent.mkdir()
+    shutil.copytree(world,copy)
+    assert level_info(world)['name']==level_info(copy)['name']
+    key1=app.world_selection_key(world)
+    key2=app.world_selection_key(copy)
+    assert key1 != key2
+    selected=next(m['key'] for m in scan_world_mobs(world,'overworld',(7,82,7),32)
+                  if m['type']=='cat')
+    cfg=make_config(world,jar)
+    cfg['shots'][0]['mobs_by_world']={key1:[selected],key2:[]}
+    cfg['shots'][0]['mob_ids']=[selected]
+    monkeypatch.setenv('MWW_DATA_DIR',str(tmp_path/'output'))
+    assert app.refresh(cfg,force=True)['stats']['mobSelected']==1
+    cfg['world']=str(copy)
+    second=app.refresh(cfg,force=True)
+    assert second['stats']['mobSelected']==0
+    data=verify_scene_script((app.output_folder()/'scene-data.js').read_bytes())
+    assert data['entities']==[]
+    assert cfg['shots'][0]['mobs_by_world'][key1]==[selected]
+
