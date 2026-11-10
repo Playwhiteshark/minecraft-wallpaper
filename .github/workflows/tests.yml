@@ -33,3 +33,5 @@ jobs:
         run: python -m playwright install chromium
       - if: runner.os == 'Linux'
         run: python tests/webgl_mob_smoke.py
+      - if: runner.os == 'Linux'
+        run: python tests/full_world_webgl_smoke.py
