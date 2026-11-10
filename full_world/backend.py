@@ -22,13 +22,24 @@ from pathlib import Path
 
 from mww.scene import check_world_closed
 
-VERSION = "0.15.1"
-RELEASE = "https://github.com/thoughts-on-things/vantage-mc/releases/download/v" + VERSION
+# An MIT-licensed build of upstream Vantage v0.15.1, with only the
+# Minecraft 26.3 block-state palette compatibility patch from native/.
+# Upstream issue: https://github.com/thoughts-on-things/vantage-mc/issues/103
+# Engine id also isolates previously cached zero-vertex tiles from this fix.
+UPSTREAM_VERSION = "0.15.1"
+VERSION = "0.15.1-mww263.1"
+PATCHED_RELEASE_TAG = (
+    "mww-vantage-263-0bd2f75024e2e12787ef9998e069279216816800"
+)
+RELEASE = (
+    "https://github.com/Playwhiteshark/minecraft-wallpaper/releases/download/"
+    + PATCHED_RELEASE_TAG
+)
 ARCHIVES = {
     "Windows": ("vantage-x86_64-windows.zip",
-                "d333a297e0e0027dff0c26f20cb111c9eab97cc97bfa65bbad382201b7812b15"),
+                "d89299915fd2a052352f4ae63dc0da29cc8e8ee8205c183cdb83e7212013e571"),
     "Linux": ("vantage-x86_64-linux.tar.gz",
-              "ff1fb5059017c536d8cd3dc8654155333fba763a12888fa308c1949458f5d89c"),
+              "ea6904c133237e15059610c2b7b2934e90b2295b777bc27c0999a5db2234da7d"),
 }
 MAX_DOWNLOAD_BYTES = 15 * 1024 * 1024
 
@@ -51,12 +62,12 @@ def backend_path(state_root: Path) -> Path:
 
 
 def require_engine(state_root: Path, *, allow_download: bool = False) -> Path:
-    """Explicit GUI build action may bootstrap Vantage once, securely pinned."""
+    """Bootstrap the verified 26.3-compatible native Vantage build on demand."""
     exe = backend_path(state_root)
     if exe.is_file():
         return exe
     if not allow_download:
-        raise ConversionError("The native Vantage converter has not been installed. Click Build World to install it once.")
+        raise ConversionError("The native Vantage converter has not been installed. Open the live viewer to install it once.")
     kind = platform.system()
     if kind not in ARCHIVES or platform.machine().lower() not in (
             "amd64", "x86_64", "x64"):
@@ -68,7 +79,7 @@ def require_engine(state_root: Path, *, allow_download: bool = False) -> Path:
         with urllib.request.urlopen(req, timeout=90) as source:
             raw = source.read(MAX_DOWNLOAD_BYTES + 1)
     except Exception as exc:
-        raise ConversionError("Cannot download pinned official Vantage release: " + str(exc)) from exc
+        raise ConversionError("Cannot download pinned Minecraft 26.3-compatible Vantage build: " + str(exc)) from exc
     if len(raw) > MAX_DOWNLOAD_BYTES or hashlib.sha256(raw).hexdigest() != expected:
         raise ConversionError("Vantage download did not match the pinned SHA-256. Nothing was installed.")
     import io
