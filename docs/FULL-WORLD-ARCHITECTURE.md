@@ -27,6 +27,19 @@ Cache keys include this native engine version under `live-cache/vantage-<VERSION
 
 The native CI regression constructs self-owned NBT for Minecraft DataVersion 5023, with both compact TAG_String and renamed compound palette forms. It verifies **nonzero mesh vertices and triangles** from `vantage render`, and nonzero solid vertices in an actual `vantage live` HTTP tile response. Never consider a successful process exit, world bounds, advertised tile count, or HTTP 200 sufficient geometry proof. Complete visual appearance for the user's save in Lively still needs a real local acceptance check.
 
+## Surface-only mode and Minecraft 26.3 compact compounds
+
+The last vertical-column screenshot displayed real vertices but tall exposed stone columns and disconnected gaps. These are distinct issues:
+
+- Upstream Vantage's `--caves` option removes **dark cave faces** below a fixed world Y, but never suppresses sky-lit vertical cliff sides from missing-neighbour chunks. Using `--caves` alone is therefore **not** surface-first geometry.
+- Minecraft 26.3 also permits a compact block ID as a string in an NBT compound under the empty key `""`; the first compatibility patch supported direct TAG_String and lowercase `id` but missed this representation and could skip entire chunks. The pinned palette patch now handles all these formats and the older Name/Properties encoding.
+
+The native `--surface-depth 16` live flag uses a **render-only surface floor per real X/Z column**. A column includes its highest actual saved block and 16 blocks below, extending deeper where adjacent existing terrain is lower, preserving genuine steep cliffs and large structures. The one-chunk apron ensures adjacent tile skirts use corresponding real heights. Absent neighbours never count as an infinitely deep valley. The mesher simply skips faces below the floor (including greedy faces and fluids) **after** reading genuine Minecraft blocks; it does not mutate the grid, create artificial bottom faces, or fabricate missing chunks. The existing native lighting/occlusion and Three.js viewer are unchanged. This reduces emitted GPU geometry, not necessarily every CPU read of underground block data.
+
+The source-world diagnostic `py -3 full_world.py --diagnose` reads only 4 KiB Anvil location-table headers in a 13×13 chunk neighbourhood. It prints saved versus missing chunks around the selected camera so that ungenerated data is not incorrectly blamed on the renderer. It does not claim that a saved chunk necessarily decoded or meshed correctly.
+
+`native/patch_vantage_surface.py` is an explicit small option on the pinned native Vantage mesher, not a new geometry converter. The app enables it only in normal Overworld live mode; optional full-depth offline export and other dimensions retain the original behaviour. Version `0.15.1-mww263.2` caches separately from both old empty 26.3 tiles and pre-surface geometry.
+
 ## Reused upstream engine — no second Minecraft implementation
 
 - **Vantage 0.15.1 + small 26.3 palette patch (MIT):** native Java save discovery, modern Anvil/region reading, blockstate resolver, chunk meshing, texture arrays, light/biome output, caching, embedded web viewer and lazy tile HTTP production.
