@@ -69,7 +69,7 @@ def test_full_native_render_has_no_radius_or_sampling_and_is_atomic(monkeypatch,
         assert command[1] == "render"
         assert Path(command[2]) == world.resolve()
         assert "--radius" not in command
-        assert "--caves" in command and "full" in command
+        assert "--caves" not in command  # Vantage keeps its surface-first default
         out = Path(command[command.index("--out") + 1])
         write_native_tile_scene(out)
         return type("Result", (), {"returncode": 0})()
@@ -170,3 +170,75 @@ def test_explicit_client_jar_uses_native_extraction_not_fake_texture_pack(monkey
         world, "abcdef012345abcdef012345", client_jar=jar)
     assert out.tiles == 1
     assert [call[1] for call in calls] == ["extract", "render"]
+
+
+def test_live_command_reuses_upstream_lazy_tiles_without_full_world_bake(tmp_path):
+    binary = tmp_path / "vantage"
+    world = tmp_path / "save"
+    cache = tmp_path / "cache"
+    args = service.live_command(binary, world, cache, 8787, "overworld", 768)
+    assert args[:3] == [str(binary), "live", str(world)]
+    assert args[args.index("--out") + 1] == str(cache)
+    assert args[args.index("--dimension") + 1] == "overworld"
+    assert args[args.index("--host") + 1] == "127.0.0.1"
+    assert args[args.index("--prebake") + 1] == "off"
+    assert args[args.index("--lod") + 1] == "on"
+    assert args[args.index("--players") + 1] == "off"
+    assert "--caves" not in args and "--radius" not in args
+    assert "render" not in args and "serve" not in args
+    with pytest.raises(ValueError):
+        service.live_command(binary, world, cache, 8787, "bad_dimension")
+
+
+def test_live_viewer_starts_with_no_offline_export_and_reuses_matching_session(
+        tmp_path, monkeypatch):
+    world = tmp_path / "Save"
+    world.mkdir()
+    (world / "level.dat").write_bytes(b"local test fixture")
+    binary = tmp_path / "vantage"
+    binary.write_bytes(b"mock native executable")
+    monkeypatch.setattr(service, "require_engine", lambda *args, **kwargs: binary)
+    monkeypatch.setattr(service, "prepare_client_assets", lambda *args, **kwargs: None)
+    monkeypatch.setattr(service, "check_world_closed", lambda *args: None)
+    monkeypatch.setattr(service, "_pid_matches", lambda record: True)
+    monkeypatch.setattr(service, "ping", lambda port: True)
+    monkeypatch.setattr(service, "_live_manifest_ready", lambda port: True)
+    commands = []
+
+    class FakeProcess:
+        pid = 9812
+        def poll(self): return None
+        def terminate(self): raise AssertionError("should not stop a healthy native viewer")
+
+    def fake_popen(command, **kwargs):
+        commands.append(command)
+        return FakeProcess()
+    monkeypatch.setattr(service.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(service.time, "sleep", lambda *args: None)
+    key = "abcdef012345abcdef012345"
+    first = service.start_live_viewer(
+        world, key, "overworld", 8787, tmp_path, allow_download=True)
+    assert first == "http://127.0.0.1:8787/"
+    assert len(commands) == 1 and commands[0][1] == "live"
+    assert backend.active_render(tmp_path / "full-world" / key) is None
+    assert service.owned_record(tmp_path)["dimension"] == "overworld"
+    second = service.start_live_viewer(world, key, "overworld", 8787, tmp_path)
+    assert second == first and len(commands) == 1
+
+
+def test_offline_full_caves_remains_explicitly_available(tmp_path, monkeypatch):
+    world = tmp_path / "World"
+    world.mkdir()
+    (world / "level.dat").write_bytes(b"synthetic")
+    binary = tmp_path / "vantage"
+    binary.write_bytes(b"mock executable")
+    monkeypatch.setattr(backend, "require_engine", lambda *args, **kwargs: binary)
+    commands = []
+    def render(command, **kwargs):
+        commands.append(command)
+        write_native_tile_scene(Path(command[command.index("--out") + 1]))
+        return type("Result", (), {"returncode": 0})()
+    monkeypatch.setattr(backend.subprocess, "run", render)
+    backend.VantageConverter(tmp_path).render(
+        world, "abcdef012345abcdef012345", caves_full=True)
+    assert commands[0][commands[0].index("--caves") + 1] == "full"
