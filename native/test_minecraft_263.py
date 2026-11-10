@@ -103,6 +103,11 @@ def check_live(binary: Path, world: Path, assets: Path, cache: Path) -> None:
         if blob[:2] == b"\x1f\x8b":
             blob = gzip.decompress(blob)
         assert blob[:3] == b"VTL", "Native viewer did not produce genuine mesh-format geometry"
+        assert len(blob) >= 12, "Native tile has no solid geometry header"
+        solid_vertices = struct.unpack_from("<I", blob, 8)[0]
+        assert solid_vertices > 0, (
+            "Native live tile has zero vertices despite a populated Minecraft 26.3 save")
+        print("PASS: 26.3 tile contains", solid_vertices, "real solid vertices")
         assert (cache / "tiles" / "t.0.0.vtile").is_file()
         print("PASS: Vantage live serves and caches Minecraft 26.3 geometry over HTTP")
     finally:
