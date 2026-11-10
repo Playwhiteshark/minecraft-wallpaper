@@ -249,6 +249,7 @@ def main():
                     world_path, key, view.get("dimension", "overworld"),
                     int(registry.get("port", 8787)), root_dir,
                     client_jar=Path(jar_text) if jar_text else None,
+                    camera=(float(view["x"]), float(view["y"]), float(view["z"])),
                     allow_download=True)
                 url = camera_url(address, view)
             except Exception as exc:
@@ -265,6 +266,10 @@ def main():
                     webbrowser.open(url)
                     status.set("Opened the native on-demand 3D renderer in the browser.")
                 else:
+                    # Embedded Vantage overlay controls are useful in browser
+                    # inspection, not on an unattended desktop wallpaper.
+                    # This query is independent of the camera hash/dimension.
+                    url = url.replace("/#", "/?wallpaper=1#", 1)
                     root.clipboard_clear()
                     root.clipboard_append(url)
                     root.update()

@@ -27,9 +27,9 @@ from mww.scene import check_world_closed
 # Upstream issue: https://github.com/thoughts-on-things/vantage-mc/issues/103
 # Engine id also isolates previously cached zero-vertex tiles from this fix.
 UPSTREAM_VERSION = "0.15.1"
-VERSION = "0.15.1-mww263.2"
+VERSION = "0.15.1-mww-preview.1"
 PATCHED_RELEASE_TAG = (
-    "mww-vantage-263-a9f10881de6ffdbe70d0599fa74d8f887d4e80c7"
+    "mww-vantage-263-20437a1bb92e56adac9f25d223de60db1a1ad4fb"
 )
 RELEASE = (
     "https://github.com/Playwhiteshark/minecraft-wallpaper/releases/download/"
@@ -37,9 +37,9 @@ RELEASE = (
 )
 ARCHIVES = {
     "Windows": ("vantage-x86_64-windows.zip",
-                "182bd9f5e9b918b4573105035b94e03506be7248b683386d1cc95c65e9ad2781"),
+                "75cd1f35041e8aacdc547fd6aaf44f49033524464fd21dda8d3b951376f0a49c"),
     "Linux": ("vantage-x86_64-linux.tar.gz",
-              "89d88ea97d8de2a7430a3face6c7f7c49a5136031352be81e3eb1a4492699602"),
+              "92529fd98b2d2c371600b97ef0ba2d4540e9883ae055ebb839a299e8adcc9103"),
 }
 MAX_DOWNLOAD_BYTES = 15 * 1024 * 1024
 

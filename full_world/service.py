@@ -195,7 +195,8 @@ def _live_manifest_ready(port: int) -> bool:
 
 def start_live_viewer(world: Path, world_key: str, dimension: str, port: int,
                       root: Path | None = None, *, client_jar: Path | None = None,
-                      memory_mib: int = 768, allow_download: bool = False) -> str:
+                      memory_mib: int = 768, allow_download: bool = False,
+                      camera: tuple[float, float, float] | None = None) -> str:
     """Start the genuine Vantage on-demand renderer for one camera dimension.
 
     A dimension switch restarts this small native process but preserves the
@@ -220,6 +221,17 @@ def start_live_viewer(world: Path, world_key: str, dimension: str, port: int,
     cache = (root / "full-world" / world_key / "live-cache" /
              ("vantage-" + VERSION) / dimension).resolve()
     cache.mkdir(parents=True, exist_ok=True)
+    # Entirely separate scene overlay. It neither reads terrain geometry nor
+    # depends on --surface-depth, a future visibility preparer, or Vantage LOD.
+    from .mobs import build_mob_overlay, empty_mob_overlay
+    try:
+        if camera is not None:
+            build_mob_overlay(world, dimension, cache, camera, client_jar)
+        else:
+            empty_mob_overlay(cache, dimension, "No saved camera supplied for mob selection")
+    except Exception as exc:
+        empty_mob_overlay(cache, dimension,
+                          "Saved mobs unavailable: " + type(exc).__name__ + ": " + str(exc))
     address = viewer_url(port)
     command = live_command(binary, world, cache, port, dimension, memory_mib, assets)
     record = owned_record(root)

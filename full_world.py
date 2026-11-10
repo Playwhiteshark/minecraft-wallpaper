@@ -79,7 +79,8 @@ def main(argv=None) -> int:
             address = start_live_viewer(
                 Path(world["path"]), key, view.get("dimension", "overworld"),
                 state.get("port", 8787), root, client_jar=jar,
-                memory_mib=args.memory, allow_download=True)
+                memory_mib=args.memory, allow_download=True,
+                camera=(float(view["x"]), float(view["y"]), float(view["z"])))
             url = camera_url(address, view)
             print("Live, on-demand viewer:", url)
             if args.open:

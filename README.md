@@ -20,6 +20,16 @@ git pull --ff-only
 
 The selected saved world carries over from the earlier app when possible. Choose or edit a **Camera Location** (world coordinates and dimension), then click **Open live viewer**. The launcher installs the SHA-256-pinned, MIT-licensed Vantage compatibility build on first use if it is missing. The `vantage live` process streams only requested chunk tiles, into a local private per-dimension cache under the app state directory. Selecting a different dimension restarts the native stream for that dimension without discarding previous caches.
 
+### Shader preview, important saved mobs, and horizon haze
+
+The native Vantage viewer now includes a **wallpaper look** panel, with Vanilla/Cinematic/Misty shader presets and live controls for sun relief, sun warmth and direction, haze start, haze softness, and haze amount. The shader uses real Minecraft lighting/AO and the existing Three.js material path. This is an appearance preview, **not** true dynamic cast shadows or global illumination.
+
+At startup, the program separately scans real saved entities within 160 blocks of the selected camera and prioritises important **tamed/named model-supported creatures**, up to 24. It reuses the earlier project's entity model adapter, versioned public Minecraft model descriptions, and **skins from an installed local Minecraft client JAR**. Missing models or skins are reported explicitly: no invented cuboid mob substitutes. The browser shows a saved-mob count. It displays saved positions (static poses), not live mob AI.
+
+The shader layer, saved-mob scene layer and distance haze are all **independent of the 16-block surface-selection algorithm**. A future shot-aware visible/shadow-caster preparer can change the terrain tile producer without touching these layers. See [render-layer interfaces](docs/WALLPAPER-RENDER-LAYERS.md).
+
+Click **Open live viewer** for the editable scene and look controls. **Copy Lively Web URL** produces a clean `?wallpaper=1` URL without editing panels or HUD (same camera hash), suitable for Lively Web Page. No additional viewer/server is required. If a saved mob does not appear, confirm that the client JAR is installed or select it in the desktop control panel; for uncommon species, real model/texture support may not yet be available.
+
 ### Surface-first 3D geometry (default live wallpaper)
 
 The current compatibility build applies two narrowly scoped native patches to the unchanged Vantage pipeline:
