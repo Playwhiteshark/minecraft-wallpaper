@@ -201,9 +201,9 @@ def test_live_viewer_starts_with_no_offline_export_and_reuses_matching_session(
     monkeypatch.setattr(service, "prepare_client_assets", lambda *args, **kwargs: None)
     monkeypatch.setattr(service, "check_world_closed", lambda *args: None)
     monkeypatch.setattr(service, "_pid_matches", lambda record: True)
-    monkeypatch.setattr(service, "ping", lambda port: True)
-    monkeypatch.setattr(service, "_live_manifest_ready", lambda port: True)
     commands = []
+    monkeypatch.setattr(service, "ping", lambda port: bool(commands))
+    monkeypatch.setattr(service, "_live_manifest_ready", lambda port: True)
 
     class FakeProcess:
         pid = 9812
