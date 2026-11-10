@@ -189,7 +189,7 @@ def test_owned_lively_copy_receives_new_viewer_and_scene(tmp_path, monkeypatch):
     (imported / 'scene-data.js').write_text('stale scene')
     config['lively_project'] = str(imported)
     assert app.sync_lively_project(config)
-    for name in ('viewer.js', 'scene-data.js'):
+    for name in ('index.html', 'viewer.js', 'entity-models.js', 'scene-data.js'):
         assert (imported / name).read_bytes() == (output / name).read_bytes()
 
 def test_scene_rejects_bad_payload():
