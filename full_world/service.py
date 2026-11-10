@@ -251,7 +251,7 @@ def start_live_viewer(world: Path, world_key: str, dimension: str, port: int,
     raise ConversionError(
         "Vantage could not start a usable on-demand scene. "
         "The world may contain an unsupported chunk format or missing assets. "
-        "Native diagnostics:\\n" + tail)
+        "Native diagnostics:\n" + tail)
 
 def startup_script_path() -> Path:
     if os.name != "nt":
