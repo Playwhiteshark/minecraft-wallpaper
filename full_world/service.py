@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import signal
 import subprocess
 import sys
@@ -38,6 +39,30 @@ def ping(port: int) -> bool:
             return response.status == 200 and "vantage" in head
     except (OSError, ValueError, urllib.error.URLError):
         return False
+
+
+def port_is_listening(port: int) -> bool:
+    """TCP socket occupancy, independent of HTTP routing or page contents."""
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=0.4):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def occupied_port_message(root: Path, port: int) -> str:
+    """Show the actual port-owning process, not an unjustified 'foreign' claim."""
+    from .processes import listener_report
+    details = listener_report(root, port)
+    pid = details.get("pid")
+    return (
+        f"Port {port} still has a listening process. Nothing was killed.\\n"
+        + (f"Listening PID: {pid}\\n" if pid else "Listening PID: unavailable\\n")
+        + f"Executable: {details.get('binary', 'unavailable')}\\n"
+        + f"Ownership check: {details.get('reason', 'unknown')}\\n"
+        + "Run 'py -3 full_world.py --port-status' to inspect its command "
+        "and determine whether it is an old app-owned Vantage process."
+    )
 
 
 def owned_record(root: Path):
@@ -90,7 +115,7 @@ def stop_viewer(root: Path | None = None, *, port: int | None = None) -> bool:
     # path. For old app versions with lost/stale records, inspect the port's
     # owning Windows process and validate app engine directory + command line.
     recorded_pid = record["pid"] if record and _pid_matches(record) else None
-    listener_pid = listening_owned_pid(root, target_port) if ping(target_port) else None
+    listener_pid = listening_owned_pid(root, target_port) if (ping(target_port) or port_is_listening(target_port)) else None
     pid = recorded_pid or listener_pid
     if pid is None:
         # Forget stale metadata, never claim that a foreign listener was
@@ -119,10 +144,10 @@ def stop_viewer(root: Path | None = None, *, port: int | None = None) -> bool:
     # Give Windows a moment to release its listening socket. A delayed release
     # must not turn a successful stop into a permanently orphaned process.
     for _ in range(30):
-        if not ping(target_port):
+        if not (ping(target_port) or port_is_listening(target_port)):
             break
         time.sleep(0.1)
-    if ping(target_port):
+    if ping(target_port) or port_is_listening(target_port):
         # A verified record may still belong to a living Vantage process even
         # if Windows cannot query the socket owner (CIM restrictions/races).
         # Do not erase that record: the next launch must still be able to stop it.
@@ -152,7 +177,7 @@ def start_viewer(render_dir: Path, port: int, root: Path | None = None) -> str:
     if record and ping(port) and Path(record["render_dir"]).resolve() == render_dir:
         if _pid_matches(record):
             return address
-    if record or ping(port):
+    if record or ping(port) or port_is_listening(port):
         # Automatically retire a *verified* orphan from an older app build.
         # A foreign listener is left intact and diagnosed, never killed.
         stop_viewer(root, port=port)
