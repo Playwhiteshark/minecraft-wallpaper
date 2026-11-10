@@ -37,3 +37,21 @@ test('unknown skins do not create misleading fake animal geometry',()=>{
   assert.equal(scope.window.MWW_ENTITY_MODELS.create([entity],
     {version:1,models:{cat:model()},textures:{}},[0,0,0]).length,0);
 });
+
+
+test('happy ghast equipment is an independently UV-mapped overlay',()=>{
+  const base=model();
+  const harness=model();
+  const skin='minecraft:textures/entity/ghast/happy_ghast.png';
+  const overlay='minecraft:textures/entity/equipment/happy_ghast_body/blue_harness.png';
+  const entity={type:'happy_ghast',pos:[0,85,0],texture:skin,
+    passes:[{model:'happy_ghast_harness',layer:'main',texture:overlay}]};
+  const pack={version:1,models:{happy_ghast:base,happy_ghast_harness:harness},
+    textures:{[skin]:'PNG',[overlay]:'PNG'}};
+  const result=scope.window.MWW_ENTITY_MODELS.create([entity],pack,[0,85,0]);
+  assert.equal(result.length,2);
+  assert.equal(result[0].texture,skin);
+  assert.equal(result[1].texture,overlay);
+  assert.ok(result[1].vertices.length>0);
+  assert.equal(scope.window.MWW_ENTITY_MODELS.create([{...entity,passes:[]}],pack,[0,85,0]).length,1);
+});

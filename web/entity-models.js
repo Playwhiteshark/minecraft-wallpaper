@@ -135,8 +135,10 @@
         vertices:bakeLayer(entity,model,'main',origin)});
       for(const pass of entity.passes||[]){
         if(!pack.textures[pass.texture])continue;
+        const passModel=pack.models?.[pass.model||entity.type];
+        if(!passModel?.layers?.[pass.layer])continue;
         result.push({texture:pass.texture,
-          vertices:bakeLayer(entity,model,pass.layer,origin,pass.tint)});
+          vertices:bakeLayer(entity,passModel,pass.layer,origin,pass.tint)});
       }
     }
     return result.filter(entry=>entry.vertices.length>0);

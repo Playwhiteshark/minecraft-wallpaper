@@ -21,7 +21,7 @@ from pathlib import Path
 
 from mww.nbt import WorldFormatError, level_info
 from mww.scene import build_scene, publish_scene, scene_fingerprint, verify_scene_script
-from mww.entities import scan_world_mobs, MODEL_TYPES
+from mww.entities import scan_world_mobs, find_named_mobs, MODEL_TYPES
 
 PROJECT = Path(__file__).resolve().parent
 WEB = PROJECT / 'web'
@@ -410,7 +410,9 @@ def gui():
     ttk.Label(row,text='Mob search radius',width=18).pack(side='left')
     ttk.Entry(row,textvariable=strings['mob_radius'],width=12).pack(side='left',fill='x',expand=True)
     ttk.Button(row,text='Choose saved mobs…',command=lambda:choose_mobs()).pack(side='left',padx=(6,0))
-    ttk.Label(left,text='Find named/tamed creatures first, then other saved mobs; selection is per shot.',
+    ttk.Button(left,text='Find named creature anywhere in saved world…',
+               command=lambda:find_named_creature()).pack(anchor='w',pady=(1,4))
+    ttk.Label(left,text='Nearby mob choices are per shot; the named-creature search can create a new shot.',
               style='Small.TLabel',wraplength=445).pack(anchor='w',pady=(0,5))
 
     ttk.Label(right,text='SAVED SHOTS',font=('Segoe UI Semibold',11)).pack(anchor='w',pady=(2,9))
@@ -472,6 +474,98 @@ def gui():
         config['world']=world_var.get().strip();config['jar']=jar_var.get().strip()
         config['shots'][selected.get()]=read_shot();config['selected']=selected.get()
         save_config(config)
+
+    def find_named_creature():
+        """On-demand search of indexed saved entity chunks, never world terrain."""
+        if busy[0]:
+            return
+        query = simpledialog.askstring(
+            'Find named creature',
+            'Search for a saved mob name (for example, Jeremy Bentham):',
+            parent=root)
+        if query is None or not query.strip():
+            return
+        try:
+            shot = read_shot()
+            world = Path(world_var.get()).expanduser().resolve()
+            if not (world / 'level.dat').is_file():
+                raise ValueError('Choose a Minecraft world first.')
+        except Exception as exc:
+            messagebox.showerror('Named creature search', str(exc))
+            return
+        busy[0] = True
+        status_var.set('Searching saved mob records for '+query.strip()+'…')
+        world_key = world_selection_key(world)
+        def worker():
+            try:
+                found = find_named_mobs(world, shot['dimension'], query.strip())
+                error = None
+            except Exception as exc:
+                found, error = None, str(exc)
+            def finished():
+                busy[0] = False
+                if error:
+                    status_var.set('Search failed; no settings were changed.')
+                    messagebox.showerror('Named creature search', error)
+                    return
+                if world_key != world_selection_key(world_var.get()):
+                    messagebox.showwarning('World changed','Select the world again and repeat the search.')
+                    return
+                if not found:
+                    status_var.set('No matching name found in saved '+shot['dimension']+' entities.')
+                    messagebox.showinfo('Named creature search',
+                        'No matching creature name was found in saved entity regions for this dimension. '
+                        'It may be in another dimension, a different world, or not currently saved.')
+                    return
+                status_var.set(f'Found {len(found)} matching saved creatures.')
+                dialog = tk.Toplevel(root)
+                dialog.title('Named creatures in saved world')
+                dialog.configure(bg=bg)
+                dialog.geometry('650x370')
+                dialog.transient(root)
+                dialog.grab_set()
+                ttk.Label(dialog,text=f'{len(found)} matches for "{query.strip()}" in {shot["dimension"]}',
+                          style='Small.TLabel').pack(anchor='w',padx=16,pady=(16,8))
+                lst=tk.Listbox(dialog,background=surface,foreground=fg,
+                    selectbackground='#187e7c',font=('Consolas',10),
+                    exportselection=False,relief='flat')
+                lst.pack(fill='both',expand=True,padx=16,pady=(0,12))
+                for mob in found:
+                    x,y,z=mob['pos']
+                    lst.insert('end',
+                        f'{mob["name"]} ({mob["type"]})  X={x:.0f} Y={y:.0f} Z={z:.0f}')
+                lst.selection_set(0)
+                buttons=ttk.Frame(dialog);buttons.pack(fill='x',padx=16,pady=(0,16))
+                def create_shot_here():
+                    index=lst.curselection()
+                    if not index:
+                        return
+                    chosen=found[index[0]]
+                    new=dict(shot)
+                    new['name']=chosen['name'] or ('Near '+chosen['type'])
+                    for k,v in zip(('x','y','z'),chosen['pos']):
+                        new[k]=round(v)
+                    # The new camera can show this mob without making a
+                    # gigantic one-shot scene bridging it to the old base.
+                    new['mobs_by_world']={world_key:[chosen['key']]}
+                    new['mob_ids']=[chosen['key']]
+                    new['mob_world_key']=world_key
+                    new['pets']=True
+                    config['shots'].append(new)
+                    config['selected']=len(config['shots'])-1
+                    config['world']=str(world)
+                    save_config(config)
+                    selected.set(config['selected'])
+                    refresh_list()
+                    form_from_shot(selected.get())
+                    dialog.destroy()
+                    status_var.set('Created a new shot near '+new['name']+
+                                   '. Click Refresh scene when ready.')
+                ttk.Button(buttons,text='Create shot at selected mob',
+                           style='Accent.TButton',command=create_shot_here).pack(side='left')
+                ttk.Button(buttons,text='Close',command=dialog.destroy).pack(side='right')
+            root.after(0,finished)
+        threading.Thread(target=worker,daemon=True).start()
 
     def choose_mobs():
         if busy[0]:
