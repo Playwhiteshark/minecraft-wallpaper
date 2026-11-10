@@ -128,12 +128,20 @@ def validate_render(folder: Path) -> tuple[int, int]:
         except (ValueError, OSError) as exc:
             raise ConversionError("Invalid Vantage dimension manifest") from exc
         # Actual native geometry files (not merely a plausible tile count).
-        tile_count += len(list(manifest.parent.rglob("*.vtile")))
-        if not obj.get("tiles") and not list(manifest.parent.rglob("*.vtile")):
-            continue
+        tile_count += len(list((manifest.parent / "tiles").glob("*.vtile")))
     if tile_count == 0:
         raise ConversionError("Vantage produced zero real high-resolution chunk tiles")
     return len(manifests), tile_count
+
+
+def world_snapshot(world: Path) -> list:
+    """Cheap source metadata guard. Never copy, write or upload save data."""
+    candidates = [world / "level.dat"]
+    for path in world.rglob("r.*.*.mca"):
+        if path.parent.name in ("region", "entities", "poi"):
+            candidates.append(path)
+    return sorted((str(p.relative_to(world)), p.stat().st_mtime_ns, p.stat().st_size)
+                  for p in candidates if p.is_file())
 
 
 class VantageConverter:
@@ -161,6 +169,7 @@ class VantageConverter:
         version = stamp + "-" + os.urandom(4).hex()
         destination = versions / version
         previous = active_render(home)
+        before_files = world_snapshot(world)
         command = [
             str(binary), "render", str(world), "--out", str(staging),
             "--caves", "full", "--memory", str(memory_mib),
@@ -178,6 +187,8 @@ class VantageConverter:
                 raise ConversionError("Vantage conversion failed:\n" + excerpt)
             dimensions, tiles = validate_render(staging)
             check_world_closed(world)
+            if before_files != world_snapshot(world):
+                raise ConversionError("The saved Minecraft world changed while rendering; previous wallpaper preserved")
             # Atomic publication: failed conversion cannot replace last-good.
             os.replace(staging, destination)
             active_path = home / "current.json"
