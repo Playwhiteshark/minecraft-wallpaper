@@ -266,6 +266,10 @@ def main():
                     webbrowser.open(url)
                     status.set("Opened the native on-demand 3D renderer in the browser.")
                 else:
+                    # Embedded Vantage overlay controls are useful in browser
+                    # inspection, not on an unattended desktop wallpaper.
+                    # This query is independent of the camera hash/dimension.
+                    url = url.replace("/#", "/?wallpaper=1#", 1)
                     root.clipboard_clear()
                     root.clipboard_append(url)
                     root.update()
