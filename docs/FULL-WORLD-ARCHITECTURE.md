@@ -1,60 +1,70 @@
-# Full saved-world application architecture
+# Minecraft Living World — camera-driven native architecture
 
-## Purpose and completion boundary
+## Working definition
 
-The new **Launch.cmd → full_world.py** entrypoint is a separate full-world application. Its conversion and GPU renderer are intentionally borrowed from maintained upstream Vantage, rather than rebuilding Minecraft's world-format, meshing, block-model, biome, lighting, tile-streaming or shader subsystems again.
+**Full saved-world support** is not **mandatory full-world conversion** and neither is **rendering the full world on the GPU**. The program must address every discovered generated chunk without inventing data; normal wallpaper operation should prepare only the tiles needed by the active camera and the renderer should admit only a budgeted visible subset.
 
-The following are not the same milestone:
-1. A custom NBT → small HTML crop (old legacy proof of concept).
-2. Vantage successfully emits genuine full-world, textured chunk tiles and its native Three.js viewer draws them.
-3. The real user's actual Minecraft save looks acceptable inside **Lively**, including multi-chunk joins, buildings/interiors and camera positions.
+The production pipeline is:
 
-The code implements 2's integration path; 3 still requires acceptance on the actual Windows computer. **Do not claim a complete visual acceptance without that.**
+```text
+Minecraft Java saved world (read only)
+  → Vantage 0.15.1 native `live` (region index + on-demand real tile meshing)
+  → private cache: full-world/<world-id>/live-cache/<dimension>/
+  → Vantage embedded localhost HTTP server
+  → Vantage native Three.js tile manager / GPU renderer
+  → browser or Lively Web Page wallpaper
+```
 
-## Dependency boundary (highest engineering priority)
+The old small-crop Python scene builder is a **legacy rollback**, not a full-world substitute.
 
-- Vantage native version **0.15.1**, MIT: official Windows/Linux release archive, pinned SHA-256, fetched to private application storage on a user-triggered build. Runtime executable includes both offline converter and small local viewer.
-- Vantage's **own Three.js renderer**, lighting, texture-array and chunk management. We do not fork its 3D geometry or invent our own shader implementation. Upstream uses actual Minecraft block models and assets; differences from newer saves are compatibility bugs to verify, not to patch via a fake grey heightfield.
-- Python 3.10+ standard library: local configuration, GUI, release installation, process management and safe snapshot switching. Python does not run while the wallpaper displays.
-- Lively Wallpaper is the desktop host. It subscribes to the loopback URL; a tiny native viewer process persists for streaming, **not** a separate Minecraft instance, Node server or another mapping desktop application.
-- Alternative: minecraft-block-reader + block-model-renderer + Three.js, which is strong for blockstate fidelity and modular scene integration; do not add it alongside Vantage unless a real incompatibility warrants swapping the conversion adapter. Running two Minecraft mesh generators in parallel would be unnecessary overhead.
+## Reused upstream engine — no second Minecraft implementation
 
-## Module map
+- **Vantage 0.15.1 (MIT):** native Java save discovery, modern Anvil/region reading, blockstate resolver, chunk meshing, texture arrays, light/biome output, caching, embedded web viewer and lazy tile HTTP production.
+- **Vantage's Three.js engine:** tile priority and budgets, streaming, geometry/material construction, GPU residency, frustum-aware view planning and camera URL hashes. Our Python code does not implement those subsystems.
+- **Python standard library/Tkinter:** the machine-local world registry, camera bookmarks, native process supervision, optional pinned binary download, startup shortcut and offline-export snapshots.
+- **Lively:** desktop host pointing at the Vantage loopback URL.
 
-| Module | Responsibility | Swap boundary |
-|---|---|---|
-| full_world/backend.py | Download verified native backend, convert all saved chunks, validate output, atomic publish | Converter adapter |
-| full_world/config.py | Local world registry by canonical path hash, cameras, dimension, startup prefs | Config service |
-| full_world/service.py | Start/stop loopback-only embedded native viewer, login startup opt-in | Viewer transport |
-| full_world/gui.py | Small Windows control panel and user flows | Front-end UI |
-| full_world.py | GUI and headless build/serve/stop/status entrypoint | CLI facade |
-| app.py / mww/* / web/* | **Legacy only** — small-crop renderer and custom mob selection, kept for rollback | Future entity overlay extraction |
+Do not invent a replacement terrain mesher, geometry transcoder or WebGL framework to achieve basic streaming. Follow [AGENTS.md](../AGENTS.md) before any new dependency or subsystem.
 
-## Concrete data flow
+## Default viewer lifecycle
 
-1. User registers a real save (contains level.dat) and chooses **Build full saved world**.
-2. The converter finds/extracts Minecraft textures locally, reads existing Anvil regions and blockstates, and writes a Vantage world index, per-dimension manifests, genuine high-resolution .vtile meshes and .vtexarr texture arrays. **No --radius limit.**
-3. Only after verifying real geometry files and unchanged source metadata does the controller atomically publish a new versioned snapshot. The last-good snapshot stays intact on any failure.
-4. An embedded Vantage HTTP viewer binds to **127.0.0.1:8787**. All chunk fetching is loopback-local. The native viewer streams tiles around the camera under its own memory budgets rather than keeping every explored chunk on the GPU.
-5. Lively is configured once with the local Web Page URL; saved camera bookmarks produce shareable camera URL hashes. On Windows login, an **optional**, user-controlled Startup shortcut restarts the small viewer against the last-good snapshot.
-6. No world data or Minecraft assets are sent to a cloud service or committed to GitHub. The source save is never written by the application.
+1. The user registers an actual Java save and sets a named camera view. The source world must not be actively open in Minecraft.
+2. Opening the browser or copying the Lively URL launches **`vantage live <save> --dimension <view> --out <cache> --host 127.0.0.1 --port 8787 --prebake off --lod on --players off`**. No `render` command and no `--radius` crop are required.
+3. The native engine indexes the real save's populated chunk positions, prepares an initial tile and publishes its manifest. Later high-resolution tile requests mesh only as the camera moves; results are persisted for later requests.
+4. The viewer admits only tiles within its own GPU memory and distance budgets, and can evict them independently of on-disk coverage. Low-resolution rings use upstream color-map LOD built from real baked tiles as they arrive.
+5. Ordinary live mode **does not pass `--caves full`**: Vantage's default Overworld cave horizon (currently y=55) excludes unseen deep cave faces. The End and Nether use their dimension-specific reachability logic. No manual top-block-only conversion or fabricated heightmap is permitted.
+6. A switch between Overworld, Nether and End starts a native `live` session for the requested dimension, retaining its cached tiles in a separate private directory.
+7. A small Vantage process remains running for Lively. Optional Windows login startup invokes `--serve`; it does not trigger a complete export. Only a verified owned process may be terminated.
 
-## Safe snapshots
+Camera URLs are local hash deep links. The original save, client JAR and copyright assets never go into the source repository or a remote server.
 
-Versions live under private state/full-world/<world-key>/versions/<version-id>. The pointer current.json identifies the active version. A conversion writes to .building-* staging, verifies tile output, checks the source's region-file metadata, then renames that staging directory into an immutable version before updating the pointer. A failed run leaves the previous version and server running. Old versions are retained for manual rollback rather than silently deleted.
+## Optional complete offline export
 
-The separate public source repository contains only code, tests and general docs; no user world names, save paths, coordinates, entity UUIDs or copyrighted Mojang assets.
+`VantageConverter.render` remains available when the user explicitly selects **Export full world** or calls `--build`. It renders every generated chunk of every discovered dimension (no arbitrary radius), validates real tile files, protects the last-good output through an atomic version pointer and retains failed-render diagnostics. It **does not need to finish before the live viewer can start**.
 
-## Engine trade-offs and future interfaces
+The default offline export uses upstream cave culling for surface-first output. `--build --caves-full` deliberately retains underground caves for a separate static map. A successful export is not evidence that the real-world camera view is visually correct in Lively.
 
-- **Accuracy:** Vantage is a Minecraft-specific renderer, much closer than the old fallback-cube converter. It retains native block geometry, texture selection, biome identity, saved light/AO and cave coverage, with chunk-aware boundary meshing. It is still a map engine, not Minecraft gameplay; redstone/ticking, dynamic entities, Java-only renderer quirks and fresh 26.3 block/model variants may differ.
-- **Shaders:** Vantage builds Three.js materials and exposes biome/fog/light shader uniforms. A later shader enhancement should extend/replace *materials and post-processing* or swap the viewer adapter; do not modify NBT parsing for every lighting change. Iris/Complementary shaderpacks are not drop-in compatible.
-- **Small mob rings and actual entity overlays:** deferred. The existing legacy saved-mob reader, model adapter and local-client-JAR skins can become an independent overlay adapter. Vantage's embedded viewer will need a documented extension hook or a custom Three.js host before claiming those overlays work in the full-world program.
-- **Resource use:** heavy work is offline conversion; after completion only the small native viewer and Lively GPU/WebView are resident. World size affects disk output; GPU residency is limited by upstream streaming budgets.
-- **Incremental refresh:** this first backend rebuilds the world into a new version. Content-hash incremental tiles and background scheduling are future performance improvements. Never replace a working snapshot during a failed rebuild.
+The previous generic 'zero high-resolution tiles' exception came from the optional offline-output validator; it did not tell the user whether upstream reported no chunks, lacked textures or could not interpret saved blocks. Failed offline validation now includes the native log tail. The live path instead checks a real advertised tile manifest before reporting startup success and displays its native startup diagnostics on failure.
 
-## Verification
+## Interface/module boundaries
 
-Automated tests check world identity, camera hash, no-radius converter command, valid tile output, stable rollback on conversion failure, SHA pin, refusal to kill foreign processes and legacy crop non-regression. CI should also execute the exact official native binary's help path on Windows/Linux. A real-world Lively screenshot/check is required separately.
+| Module | Scope |
+| --- | --- |
+| `full_world/backend.py` | Vantage release pin/verification, selected client asset extraction, optional static export, atomic snapshot validation |
+| `full_world/service.py` | Compose and supervise native `live`, verify initial manifest, per-dimension cache, owned PID and loopback viewer transport; backward-compatible static `serve` adapter |
+| `full_world/config.py` | Machine-local paths, worlds, cameras, stable world-key hashing, Vantage URL hash |
+| `full_world/gui.py` | Nonblocking camera-driven Open/Copy actions; optional export remains separate |
+| `full_world.py` | CLI: default `--open`/`--serve` live, optional `--build` offline |
+| `mww/*`, `app.py`, `web/*` | Preserved legacy crop/selected-mob implementation |
 
-User-facing limitations: user must add the Lively Web Page URL once, optional login startup is opt-in, and selected pet overlays aren't in the new native viewer yet. The old custom prototype is still available through Legacy-Prototype.cmd.
+## Fidelity and deferred work
+
+Vantage's renderer consumes genuine Minecraft model-backed mesh data; it is not Minecraft's own renderer and may require compatibility work for changed Minecraft block metadata/newer save formats. If a real save yields no mesh, read the native diagnostics and verify format support rather than filling empty space with approximate cubes.
+
+Shader/material extensions belong behind the renderer boundary, not in NBT decoding. True occlusion culling, more sophisticated frustum priorities, multiple camera prewarming, refreshing a cache after a save changes, custom mobs and pet rings are **not** part of this minimal functional release. Underground/cave exploration is explicitly postponed; retaining the existing backend API prevents blocking it later.
+
+## Tests and truthful acceptance
+
+- Unit tests cover source identity, stable camera hashes, live command options, no mandatory export, single-instance reuse, optional complete export and safe ownership.
+- Native CI runs the exact pinned upstream binary, exercises its embedded Three.js page, and performs both static conversion and genuine lazy tile serving from a synthetic two-chunk Anvil world.
+- These prove native integration, not visual acceptance of an arbitrary 26.3 saved world. For release acceptance inspect a real camera's buildings, adjacent chunks, textures and Lively WebView; log unsupported chunk formats clearly. Never claim visual success from an HTTP status alone.
