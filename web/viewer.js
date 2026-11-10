@@ -516,7 +516,21 @@
     const bottom=Math.min(surfaceFocus[1]-2,pY[0]-1);
     const top=Math.max(surfaceFocus[1]+3,pY[pY.length-1]+4);
     allFocus[1]=(bottom+top)/2;
-    const r=Math.max(4,Number(scene.radius||24));
+    // Manual mob choices can lie beyond the detailed base bounds. The All
+    // button must actually show them, not just expand the vertical crop.
+    const detailedRadius=Math.max(4,Number(scene.radius||24));
+    const xs=[-detailedRadius,detailedRadius],zs=[-detailedRadius,detailedRadius];
+    for(const entity of scene.entities||[]){
+      const p=entity.pos||[];
+      if(p.length<3||!p.every(Number.isFinite))continue;
+      xs.push(p[0]-scene.origin[0]);
+      zs.push(p[2]-scene.origin[2]);
+    }
+    allFocus[0]=(Math.min(...xs)+Math.max(...xs))/2;
+    allFocus[2]=(Math.min(...zs)+Math.max(...zs))/2;
+    const r=Math.max(detailedRadius,
+      (Math.max(...xs)-Math.min(...xs))/2,
+      (Math.max(...zs)-Math.min(...zs))/2)+4;
     const halfSpan=(top-bottom)/2;
     const cp=Math.abs(Math.cos(initialPitch)),sp=Math.abs(Math.sin(initialPitch));
     const vHalf=halfSpan*cp+r*.85*sp;
