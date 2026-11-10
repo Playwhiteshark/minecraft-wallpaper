@@ -26,6 +26,7 @@ def main(argv=None) -> int:
     group.add_argument("--serve", action="store_true", help="Start the saved world's on-demand native viewer")
     group.add_argument("--stop", action="store_true", help="Stop only the viewer owned by this app")
     group.add_argument("--status", action="store_true", help="Print registered render and viewer status")
+    group.add_argument("--diagnose", action="store_true", help="Inspect actual saved chunks around the first camera (read-only)")
     group.add_argument("--open", action="store_true", help="Start viewer and open in browser")
     parser.add_argument("--world", type=Path, help="Register a Minecraft save folder first")
     parser.add_argument("--jar", type=Path, help="Optional installed Minecraft client JAR")
@@ -51,6 +52,17 @@ def main(argv=None) -> int:
                     "url": viewer_url(state.get("port", 8787))}, indent=2))
             except ValueError:
                 print("No world registered")
+            return 0
+        if args.diagnose:
+            from full_world.diagnostics import inspect_near_camera
+            key, world, _ = current_world(state, root)
+            view = world["views"][0]
+            report = inspect_near_camera(
+                Path(world["path"]), view.get("dimension", "overworld"),
+                float(view["x"]), float(view["z"]))
+            print(json.dumps(report, indent=2))
+            print("Legend: # saved, . absent, C/c camera chunk. "
+                  "Saved chunks are not necessarily readable or rendered correctly.")
             return 0
         if args.build or args.serve or args.open:
             key, world, folder = current_world(state, root)

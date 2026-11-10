@@ -2,7 +2,7 @@
 """Compatibility-only patch against Vantage v0.15.1 (MIT).
 
 Upstream issue #103: Minecraft 26.3 NBT block-state palettes switched from
-Name/Properties compounds to id/properties compounds and compact string ids.
+Name/Properties compounds to id/properties compounds and compact string ids, including empty-key compounds.
 We reuse every upstream subsystem and change only the native palette decoder.
 The upstream checkout must be pinned to commit
 953f0ac78d62de751a935b8e8d5be2d711d6fd56.
@@ -34,7 +34,8 @@ NEW = """        for (palette, names, states) |p, *nm, *st| {
                 .string => |id| nm.* = id,
                 .compound => |entries| {
                     const id = nbt.get(entries, "id") orelse
-                        nbt.get(entries, "Name") orelse return error.BadFormat;
+                        nbt.get(entries, "Name") orelse
+                        nbt.get(entries, "") orelse return error.BadFormat;
                     if (id.* != .string) return error.BadFormat;
                     nm.* = id.string;
                     if (nbt.get(entries, "properties") orelse
@@ -69,6 +70,10 @@ test "Minecraft 26.3 compact and renamed palette entries preserve actual blocks"
         .{ .name = "id", .tag = .{ .string = "minecraft:oak_log" } },
         .{ .name = "properties", .tag = .{ .compound = &new_properties } },
     };
+    var empty_key_block = [_]nbt.Entry{
+        .{ .name = "", .tag = .{ .string = "minecraft:grass_block" } },
+    };
+    var empty_key_palette = [_]nbt.Tag{.{ .compound = &empty_key_block }};
     var old_palette = [_]nbt.Tag{.{ .compound = &old_block }};
     var new_palette = [_]nbt.Tag{.{ .compound = &new_block }};
     var string_palette = [_]nbt.Tag{.{ .string = "minecraft:stone" }};
@@ -77,6 +82,9 @@ test "Minecraft 26.3 compact and renamed palette entries preserve actual blocks"
     } }};
     var new_bs = [_]nbt.Entry{.{ .name = "palette", .tag = .{
         .list = .{ .elem = .compound, .items = &new_palette },
+    } }};
+    var empty_key_bs = [_]nbt.Entry{.{ .name = "palette", .tag = .{
+        .list = .{ .elem = .compound, .items = &empty_key_palette },
     } }};
     var string_bs = [_]nbt.Entry{.{ .name = "palette", .tag = .{
         .list = .{ .elem = .string, .items = &string_palette },
@@ -93,10 +101,15 @@ test "Minecraft 26.3 compact and renamed palette entries preserve actual blocks"
         .{ .name = "Y", .tag = .{ .byte = 2 } },
         .{ .name = "block_states", .tag = .{ .compound = &string_bs } },
     };
+    var empty_key_section = [_]nbt.Entry{
+        .{ .name = "Y", .tag = .{ .byte = 3 } },
+        .{ .name = "block_states", .tag = .{ .compound = &empty_key_bs } },
+    };
     var sections = [_]nbt.Tag{
         .{ .compound = &old_section },
         .{ .compound = &new_section },
         .{ .compound = &string_section },
+        .{ .compound = &empty_key_section },
     };
     var root = [_]nbt.Entry{
         .{ .name = "DataVersion", .tag = .{ .int = 5023 } },
@@ -107,13 +120,14 @@ test "Minecraft 26.3 compact and renamed palette entries preserve actual blocks"
         } },
     };
     const decoded = try decode(a, &root);
-    try std.testing.expectEqual(@as(usize, 3), decoded.sections.len);
+    try std.testing.expectEqual(@as(usize, 4), decoded.sections.len);
     try std.testing.expectEqualStrings("minecraft:oak_log", decoded.sections[0].names[0]);
     try std.testing.expectEqualStrings("axis=x", decoded.sections[0].states[0]);
     try std.testing.expectEqualStrings("minecraft:oak_log", decoded.sections[1].names[0]);
     try std.testing.expectEqualStrings("axis=z", decoded.sections[1].states[0]);
     try std.testing.expectEqualStrings("minecraft:stone", decoded.sections[2].names[0]);
     try std.testing.expectEqualStrings("", decoded.sections[2].states[0]);
+    try std.testing.expectEqualStrings("minecraft:grass_block", decoded.sections[3].names[0]);
 }
 """
 

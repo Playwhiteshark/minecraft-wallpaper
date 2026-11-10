@@ -20,17 +20,30 @@ git pull --ff-only
 
 The selected saved world carries over from the earlier app when possible. Choose or edit a **Camera Location** (world coordinates and dimension), then click **Open live viewer**. The launcher installs the SHA-256-pinned, MIT-licensed Vantage compatibility build on first use if it is missing. The `vantage live` process streams only requested chunk tiles, into a local private per-dimension cache under the app state directory. Selecting a different dimension restarts the native stream for that dimension without discarding previous caches.
 
+### Surface-first 3D geometry (default live wallpaper)
+
+The current compatibility build applies two narrowly scoped native patches to the unchanged Vantage pipeline:
+
+- [26.3 palette decoder](native/patch_vantage_263.py) recognizes compact TAG_String blocks, renamed id/properties compounds, **and the empty-key block ID compound form**. Missing this last form could silently drop saved chunks and leave disconnected vertical columns.
+- [Surface ribbon mesher](native/patch_vantage_surface.py) adds optional `--surface-depth 16` to **Overworld live viewing only**. It emits faces only near the actual topmost block of each X/Z column, extending down when lower adjacent saved terrain exposes a genuine cliff. It never fabricates topsoil, fills empty chunks, or creates artificial bottom faces. The existing native block grid is still read for lighting, model resolution and hidden-face culling.
+
+The default is a 16-block-deep surface ribbon, not a full-height terrain extrusion; deep caves and underground exploration are deferred. This is **geometry suppression**, not an implementation of Minecraft's entire world generation system. A separate native engine version and local cache namespace prevent reuse of previous empty or full-height tiles.
+
+The native CI test now creates two adjacent real Minecraft DataVersion 5023 chunks (including the empty-key compound palette encoding), checks nonzero geometry from both native and live paths, and asserts that surface live tiles have fewer vertices than the full-depth offline rendering. The original Vantage embedded Three.js renderer remains unchanged.
+
 ### Minecraft 26.3 compatibility (zero vertices / empty sky)
 
-The official upstream Vantage **0.15.1** executable predates Minecraft 26.3 Snapshot 7's block-state storage change: vanilla chunk palettes can now contain compact string block IDs and compounds with `id`/`properties`, whereas upstream expects `Name`/`Properties`. Upstream [issue #103](https://github.com/thoughts-on-things/vantage-mc/issues/103) documents the exact symptom: recognized chunks silently mesh into air. Our **`0.15.1-mww263.1`** compatibility build keeps the same upstream native reader, renderer and web frontend and patches only the 26.3 palette interpretation (see [native patch](native/patch_vantage_263.py)).
+The official upstream Vantage **0.15.1** executable predates Minecraft 26.3 Snapshot 7's block-state storage change: vanilla chunk palettes can now contain compact string block IDs and compounds with `id`/`properties`, whereas upstream expects `Name`/`Properties`. Upstream [issue #103](https://github.com/thoughts-on-things/vantage-mc/issues/103) documents the exact symptom: recognized chunks silently mesh into air. Our **`0.15.1-mww263.2`** build keeps the native world reader, renderer, tile protocol and embedded viewer; it fixes compact-string, empty-key compound and renamed-field palettes, and adds the separate surface-only live option.
 
-The binaries are built from the [pinned upstream v0.15.1 Git commit](https://github.com/thoughts-on-things/vantage-mc/tree/953f0ac78d62de751a935b8e8d5be2d711d6fd56), include its MIT license, and are independently SHA-256-pinned in the Python downloader. [Build workflow](.github/workflows/native-vantage-263.yml) runs native Zig decoder tests plus a synthetic Minecraft 26.3 **real conversion and live tile test that asserts nonzero vertices** before release publication.
+The binaries are built from the [pinned upstream v0.15.1 Git commit](https://github.com/thoughts-on-things/vantage-mc/tree/953f0ac78d62de751a935b8e8d5be2d711d6fd56), include its MIT license, and are SHA-256-pinned in the Python downloader. The [native build workflow](.github/workflows/native-vantage-263.yml) verifies adjacent Minecraft 26.3 chunk formats and **real surface-only live mesh output** before publication.
 
-**After a `git pull`**, close Minecraft and click **Open live viewer** once. The app obtains the patched native executable automatically. A newly versioned cache prevents reuse of empty VTL tiles produced by the original 0.15.1 decoder; you do not need to delete your existing saved world, old caches, or successful offline exports. Visual fidelity in your actual save still requires inspecting the new viewer; no tool here accesses the private save remotely.
+**After a `git pull`**, close Minecraft and click **Open live viewer** once. The app obtains the patched native executable automatically. A newly versioned cache prevents reuse of old missing-geometry or full-height tiles; you do not need to delete your existing saved world, old caches, or successful offline exports. Visual fidelity in your actual save still requires inspecting the new viewer; no tool here accesses the private save remotely.
 
 There is **no mandatory Build button**. **Export full world (optional)** retains Vantage's normal offline `render` capability for a static map and still uses atomic last-good snapshot publishing. An offline export does not replace the live wallpaper process. Full hidden cave coverage is opt-in on the command line.
 
 In Lively, use **Copy Lively Web URL**, then **Add Wallpaper → Web Page** and paste the local camera URL. The native Vantage web server binds to **127.0.0.1:8787**; the control panel can close while Vantage stays alive. The optional **Start at Windows login** option restarts the camera-driven `live` viewer (not a world export). This is not an HTTP-accessible public web service.
+
+When the camera still shows missing terrain, run `py -3 full_world.py --diagnose`. It prints a 13×13 grid of **actual saved** Anvil chunks around the current camera: `#` present, `.` absent, and `C` or `c` marking the camera's chunk. This reads only the native region location tables; it never modifies the save or substitutes invented terrain. A dense saved grid with visible gaps indicates another decoder/renderer problem rather than absent chunks.
 
 ### Commands
 
@@ -38,6 +51,7 @@ In Lively, use **Copy Lively Web URL**, then **Add Wallpaper → Web Page** and 
 py -3 full_world.py --open        # Live streaming; opens the browser
 py -3 full_world.py --serve       # Live streaming; suitable for login startup
 py -3 full_world.py --status
+py -3 full_world.py --diagnose    # Read-only saved chunk coverage around the camera
 py -3 full_world.py --stop
 py -3 full_world.py --build       # Optional full saved-world offline export
 py -3 full_world.py --build --caves-full # Optional deep caves in offline export
@@ -131,7 +145,7 @@ py -3 app.py --preview       # open previously generated scene
 ## Where files live
 
 - **Source checkout:** wherever you extracted/cloned this repository, preferably `%USERPROFILE%\CODING STUFF\minecraft-wallpaper`.
-- **User-owned state/output (Windows):** `%USERPROFILE%\COMPUTER STUFF\Minecraft Living World Wallpaper\` containing `config.json`, generated `wallpaper/` files, and `scene-data.previous.js` for one-step rollback. These survive uninstall/deletion of the source checkout unless **you explicitly delete** them.
+- **User-owned state/output (Windows):** `%USERPROFILE%\COMPUTER STUFF\Minecraft Living World Wallpaper` containing `config.json`, generated `wallpaper/` files, and `scene-data.previous.js` for one-step rollback. These survive uninstall/deletion of the source checkout unless **you explicitly delete** them.
 - **Original world + installed client version jar:** read-only, never copied into the repository or automatically shared.
 - **Optional Lively imported project:** only user-selected, verified MWW-owned `scene-data.js` is rewritten; it remains Lively-managed and should be removed through Lively, not guessed filesystem deletion.
 - **Caches/staging:** per-file temporary data inside the owned output/config folder, removed after success and normally failure; no hidden model downloads or external asset cache. Failure diagnostics are printed in the GUI/CLI rather than accumulated in a log.

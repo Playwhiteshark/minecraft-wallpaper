@@ -185,6 +185,9 @@ def test_live_command_reuses_upstream_lazy_tiles_without_full_world_bake(tmp_pat
     assert args[args.index("--lod") + 1] == "on"
     assert args[args.index("--players") + 1] == "off"
     assert "--caves" not in args and "--radius" not in args
+    assert args[args.index("--surface-depth") + 1] == "16"
+    nether = service.live_command(binary, world, cache, 8787, "the_nether")
+    assert "--surface-depth" not in nether
     assert "render" not in args and "serve" not in args
     with pytest.raises(ValueError):
         service.live_command(binary, world, cache, 8787, "bad_dimension")
@@ -243,3 +246,23 @@ def test_offline_full_caves_remains_explicitly_available(tmp_path, monkeypatch):
     backend.VantageConverter(tmp_path).render(
         world, "abcdef012345abcdef012345", caves_full=True)
     assert commands[0][commands[0].index("--caves") + 1] == "full"
+
+
+def test_camera_chunk_coverage_is_read_only_and_handles_negative_coords(tmp_path):
+    from full_world.diagnostics import inspect_near_camera
+    folder = tmp_path / "Save"
+    region_dir = folder / "region"
+    region_dir.mkdir(parents=True)
+    table = bytearray(8192)
+    # Chunk (-1,-1) is the last entry in region (-1,-1).
+    table[1023 * 4:1024 * 4] = ((2 << 8) | 1).to_bytes(4, "big")
+    p = region_dir / "r.-1.-1.mca"
+    p.write_bytes(table)
+    original = p.read_bytes()
+    report = inspect_near_camera(folder, "overworld", -1, -1, radius_chunks=1)
+    assert report["camera_chunk"] == [-1, -1]
+    assert report["saved"] == 1 and report["missing"] == 8
+    assert report["grid"][1][1] == "C"
+    assert p.read_bytes() == original
+    with pytest.raises(ValueError):
+        inspect_near_camera(folder, "overworld", 0, 0, radius_chunks=33)
