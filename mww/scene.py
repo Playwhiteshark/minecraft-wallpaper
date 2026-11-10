@@ -418,7 +418,7 @@ def build_scene(world: Path, options: dict):
     if len(chosen) > 128:
         raise ValueError('This shot selects more than 128 saved mobs. Narrow the selection.')
     entities = [{key: e.get(key) for key in ('type', 'pos', 'yaw', 'baby',
-                  'variant', 'tame', 'collar')} for e in chosen]
+                  'variant', 'tame', 'collar', 'harness')} for e in chosen]
     # Asset data is local output only, never added to this repository.
     # Missing model/texture is surfaced rather than silently being called
     # an accurately rendered Minecraft mob.
