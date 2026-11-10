@@ -43,12 +43,15 @@ There is **no mandatory Build button**. **Export full world (optional)** retains
 
 In Lively, use **Copy Lively Web URL**, then **Add Wallpaper → Web Page** and paste the local camera URL. The native Vantage web server binds to **127.0.0.1:8787**; the control panel can close while Vantage stays alive. The optional **Start at Windows login** option restarts the camera-driven `live` viewer (not a world export). This is not an HTTP-accessible public web service.
 
+When the camera still shows missing terrain, run `py -3 full_world.py --diagnose`. It prints a 13×13 grid of **actual saved** Anvil chunks around the current camera: `#` present, `.` absent, and `C` or `c` marking the camera's chunk. This reads only the native region location tables; it never modifies the save or substitutes invented terrain. A dense saved grid with visible gaps indicates another decoder/renderer problem rather than absent chunks.
+
 ### Commands
 
 ~~~powershell
 py -3 full_world.py --open        # Live streaming; opens the browser
 py -3 full_world.py --serve       # Live streaming; suitable for login startup
 py -3 full_world.py --status
+py -3 full_world.py --diagnose    # Read-only saved chunk coverage around the camera
 py -3 full_world.py --stop
 py -3 full_world.py --build       # Optional full saved-world offline export
 py -3 full_world.py --build --caves-full # Optional deep caves in offline export
