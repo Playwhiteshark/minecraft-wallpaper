@@ -139,3 +139,34 @@ def test_no_saved_renderer_is_not_imagined(tmp_path):
     assert backend.active_render(root) is None
     (root / "current.json").write_text('{"schema":1,"version":"../secrets"}')
     assert backend.active_render(root) is None
+
+
+def test_explicit_client_jar_uses_native_extraction_not_fake_texture_pack(monkeypatch, tmp_path):
+    world = tmp_path / "World"
+    world.mkdir()
+    (world / "level.dat").write_bytes(b"synthetic world metadata")
+    jar = tmp_path / "26.3.jar"
+    jar.write_bytes(b"synthetic jar; mocked native extract")
+    binary = tmp_path / "vantage"
+    binary.write_bytes(b"mocked executable")
+    monkeypatch.setattr(backend, "require_engine", lambda *a, **kw: binary)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    calls = []
+    def simulate(command, **kwargs):
+        calls.append(command)
+        if command[1] == "extract":
+            assert command[2] == str(jar)
+            folder = tmp_path / ".cache" / "vantage" / "assets" / jar.stem / "assets" / "minecraft" / "blockstates"
+            folder.mkdir(parents=True)
+        else:
+            assert command[1] == "render"
+            assert "--assets" in command
+            assert str(tmp_path / ".cache" / "vantage" / "assets" / jar.stem /
+                       "assets" / "minecraft") in command
+            write_native_tile_scene(Path(command[command.index("--out")+1]))
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+    monkeypatch.setattr(backend.subprocess, "run", simulate)
+    out = backend.VantageConverter(tmp_path).render(
+        world, "abcdef012345abcdef012345", client_jar=jar)
+    assert out.tiles == 1
+    assert [call[1] for call in calls] == ["extract", "render"]
