@@ -115,7 +115,7 @@ def prepare_client_assets(binary: Path, client_jar: Path | None,
     except (OSError, subprocess.SubprocessError) as exc:
         raise ConversionError("Cannot extract selected Minecraft JAR: " + str(exc)) from exc
     if result.returncode:
-        raise ConversionError("Cannot extract selected Minecraft JAR:\\n" +
+        raise ConversionError("Cannot extract selected Minecraft JAR:\n" +
                               (result.stdout + result.stderr)[-2400:])
     user_home = Path(os.environ.get("HOME") or
                      os.environ.get("USERPROFILE") or Path.home())
@@ -228,7 +228,7 @@ class VantageConverter:
                 raise ConversionError(
                     f"{exc}. See converter diagnostics below. "
                     "Unreadable terrain, incompatible chunk formats, or missing assets "
-                    "must be reported, not replaced with fabricated geometry.\\n"
+                    "must be reported, not replaced with fabricated geometry.\n"
                     + log_tail) from exc
             check_world_closed(world)
             if before_files != world_snapshot(world):
