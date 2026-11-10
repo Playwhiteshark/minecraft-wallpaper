@@ -96,7 +96,11 @@ def camera_hash(view: dict) -> str:
     import math
     if not all(math.isfinite(v) for v in vals) or vals[3] <= 0:
         raise ValueError("Camera values must be finite; distance must be positive")
-    return "#@" + ",".join(format(v, ".6g") for v in vals)
+    dimension = str(view.get("dimension", "overworld"))
+    if dimension not in ("overworld", "the_nether", "the_end"):
+        raise ValueError("Unknown camera dimension")
+    prefix = "" if dimension == "overworld" else dimension
+    return "#" + prefix + "@" + ",".join(format(v, ".6g") for v in vals)
 
 
 def camera_url(base: str, view: dict) -> str:
