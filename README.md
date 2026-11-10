@@ -1,10 +1,54 @@
 # Minecraft Living World Wallpaper
 
-A small **working starter** for Windows: transform a bounded part of a Minecraft Java world into a shader-inspired **live 3D wallpaper** with parallax, saved camera shots, simple resident-animal models, and optional refresh through Windows Task Scheduler. It reuses your existing **Lively Wallpaper**; Minecraft does not stay running.
+## Full saved-world application (default)
+
+**This is the new basic pipeline:** real Minecraft save → upstream Vantage native converter → full saved/generated chunk tiles and native game textures → upstream Three.js renderer → Lively Wallpaper. It is **not** the old cropped 24-block island or the discontinued 8-block sampling system.
+
+**Status:** implemented as an independent modular application. The actual saved-world and Lively appearance has **not been visually accepted yet**. This is not Minecraft itself or an Iris/Complementary shaderpack.
+
+### Run on Windows
+
+Keep Minecraft closed, then run from your existing Git checkout:
+
+~~~powershell
+cd "$env:USERPROFILE\CODING STUFF\minecraft-wallpaper"
+git pull --ff-only
+.\Launch.cmd
+~~~
+
+Choose your save (the old selected save is reused when possible), then click **Build full saved world**. The application downloads the pinned official **Vantage v0.15.1 native Windows CLI ZIP (about 1 MB)** once, verifies the upstream SHA-256, and keeps the executable in private application data. It converts **all saved/generated chunks**, not merely the base radius. Missing or unexplored areas are never invented. A failed conversion preserves the previous render.
+
+Click **Open full-world viewer** to navigate the actual saved world. The upstream renderer includes terrain materials, biome colour, saved lighting, caves, multiple dimensions and on-demand tile streaming. Choose and save separate camera locations in the control panel.
+
+For Lively, choose **Copy Lively Web URL**, then in Lively select **Add Wallpaper → Web Page** and paste it. The URL is loopback-only (http://127.0.0.1:8787/). A small native Vantage viewer process must remain running while the wallpaper is displayed; the control panel itself can close. Enable **Start at Windows login** only if you want the native viewer to restart automatically after reboot.
+
+Command-line equivalents:
+
+~~~powershell
+py -3 full_world.py --status
+py -3 full_world.py --build
+py -3 full_world.py --open
+py -3 full_world.py --serve
+py -3 full_world.py --stop
+~~~
+
+**Scope:** entire saved-world chunk coverage, genuine GPU textured geometry, upstream camera streaming/LOD, cave views, dimensions, multi-world selection, camera bookmarks and reversible render snapshots. The existing selected mob models (including happy-ghast harnesses and cats), selected-mob UI, custom shaders and small-pet circles are **not yet integrated into the new full-world viewer**. They remain in **Legacy-Prototype.cmd** pending modular overlay integration. This first version deliberately prioritises a genuine working world over cosmetics.
+
+**Overhead:** existing Python 3.10+ and Tkinter for the control panel; short-lived native Vantage converter and the same small native executable serving its embedded Three.js viewer at 127.0.0.1 while the wallpaper is active. No Minecraft client, Node, Java or additional standalone 3D desktop app needs to remain running.
+
+Vantage is MIT-licensed and downloaded from its official release rather than redistributed. Client texture assets are never committed to this repository. Architecture and limitations: [Full-world architecture](docs/FULL-WORLD-ARCHITECTURE.md). The **highest engineering rule** is to reuse maintained libraries first unless their build, runtime or licensing overhead demonstrably outweighs the benefit: [AGENTS.md](AGENTS.md).
+
+---
+
+## Preserved legacy cropped-scene prototype
+
+The text below documents the older experimental app (**Legacy-Prototype.cmd** or **py -3 app.py**). It remains available for the original mob selector and as a rollback. The small crop and custom rendering engine are *not* the full-world application above.
+
+An older **cropped starter** for Windows: transform a bounded part of a Minecraft Java world into a shader-inspired **live 3D wallpaper** with parallax, saved camera shots, simple resident-animal models, and optional refresh through Windows Task Scheduler. It reuses your existing **Lively Wallpaper**; Minecraft does not stay running.
 
 > **Status: bounded prototype, not yet a complete Minecraft-world pipeline.** The application can read a small saved-world crop and render it in Lively, but it does **not** index/convert/load and navigate an entire saved world through reusable chunk tiles. The old sparse coarse-landscape experiment was visually incorrect and is now disabled in the control panel, including for older saved shots. Versioned saved-world chunk tiling, independent camera locations and material/renderer boundaries are required before calling the minimal product architecture complete.
 
-## Run it
+## Run the legacy prototype
 
 Requires **Windows, Python 3.10+ with Tkinter**, Minecraft Java Edition 1.18+ save data, including the 26.1 world-folder layout, a modern browser with WebGL2, and the Lively version you already use. No pip install, Node, Java server, game mod, npm dependencies, external map software, or new background service is required for this starter.
 
