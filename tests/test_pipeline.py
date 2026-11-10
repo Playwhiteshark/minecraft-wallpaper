@@ -373,3 +373,85 @@ def test_java_26_3_plain_string_palette_refresh(tmp_path, monkeypatch):
     monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'out'))
     result = app.refresh(make_config(world, jar), force=True)
     assert result['stats']['blocks'] == 1
+
+
+def test_saved_mob_picker_uses_stable_uuid_selection(tmp_path, monkeypatch):
+    from mww.entities import scan_world_mobs
+    world, jar = make_world(tmp_path)
+    monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'owned-output'))
+    mobs = scan_world_mobs(world, 'overworld', (7,82,7), 32)
+    assert len(mobs) == 5
+    assert all(e['stable'] and e['key'].startswith('uuid:') for e in mobs)
+    cat = next(e for e in mobs if e['type'] == 'cat')
+    assert cat['name'] == '' and cat['tame'] == 'unknown'
+    cfg = make_config(world, jar)
+    missing = 'uuid:ffffffff-ffff-ffff-ffff-ffffffffffff'
+    cfg['shots'][0]['mob_ids'] = [cat['key'], missing]
+    cfg['shots'][0]['mob_radius'] = 32
+    result = app.refresh(cfg, force=True)
+    scene = verify_scene_script((app.output_folder() / 'scene-data.js').read_bytes())
+    assert result['stats']['mobSelected'] == 1
+    assert result['stats']['mobMissing'] == 1
+    assert result['stats']['mobFound'] == 5
+    assert [mob['type'] for mob in scene['entities']] == ['cat']
+    assert 'uuid:' not in (app.output_folder() / 'scene-data.js').read_text(encoding='utf-8')
+    assert cfg['shots'][0]['mob_ids'] == [cat['key'], missing]
+
+
+def test_named_tamed_mobs_sort_first_with_unknown_status(monkeypatch, tmp_path):
+    from mww import entities
+    def mob(name, uid, label=None, owner=None, variant=None):
+        data = {'id':'minecraft:'+name, 'UUID':[uid,0,0,0],
+                'Pos':[3.0,81.0,3.0], 'Rotation':[0.0,0.0]}
+        if label: data['CustomName']=json.dumps({'text':label})
+        if owner: data['Owner']=[99,0,0,0]
+        if variant: data['variant']=variant
+        return data
+    records = [
+        mob('pig',1), mob('cat',2,'Whiskers',True,'minecraft:calico'),
+        mob('wolf',3,owner=True), mob('sheep',4,'Daisy'),
+        {'id':'minecraft:item','Pos':[3.,81.,3.]},
+    ]
+    class Reader:
+        def __init__(self, path): pass
+        def __enter__(self): return self
+        def __exit__(self,*a): return None
+        def chunk(self,cx,cz):return {'Entities':records} if cx==cz==0 else None
+    monkeypatch.setattr(entities,'RegionReader',Reader)
+    result=entities.scan_saved_entities(tmp_path,
+        (0,15,None,None,0,15),all_heights=True)
+    assert [x['type'] for x in result]==['cat','sheep','wolf','pig']
+    assert result[0]['name']=='Whiskers'
+    assert result[0]['variant']=='minecraft:calico'
+    assert result[0]['tame']=='tamed'
+    assert result[-1]['tame']=='unknown'
+
+
+def test_genuine_mob_asset_package_from_local_jar_and_cached_model(tmp_path):
+    from mww.mob_assets import build_entity_assets, MODEL_VERSION
+    cache=tmp_path/'cache'
+    target=cache/MODEL_VERSION/'cat.json'
+    target.parent.mkdir(parents=True)
+    model={'id':'minecraft:cat','layers':{'main':{
+        'texture':[64,32],
+        'textureLocation':'minecraft:textures/entity/cat/cat_black.png',
+        'root':{'pose':{'offset':[0,0,0],'rotation':[0,0,0]},
+                'cubes':[{'origin':[-3,0,-3],'size':[6,6,6],'uv':[0,0]}],
+                'children':{}}}}, 'transform':[]}
+    target.write_text(json.dumps(model),encoding='utf-8')
+    jar=tmp_path/'local-client.jar'
+    with zipfile.ZipFile(jar,'w') as z:
+        z.writestr('assets/minecraft/textures/entity/cat/cat_calico.png',fake_png())
+    entity={'type':'cat','pos':[4,82,4],'baby':False,'yaw':0,
+            'tame':'unknown','variant':'minecraft:calico','collar':None}
+    pack,errors=build_entity_assets([entity],cache,jar,fetch_missing=False)
+    assert errors==[]
+    assert entity['texture']=='minecraft:textures/entity/cat/cat_calico.png'
+    assert pack['models']['cat']==model
+    assert base64.b64decode(pack['textures'][entity['texture']]).startswith(b'\x89PNG')
+
+
+def test_no_minecraft_model_is_redistributed_in_source(tmp_path):
+    from mww.mob_assets import load_model
+    model,error=load_model('../not_a_model',tmp_path,fetch_missing=False)
+    assert model is None and error
