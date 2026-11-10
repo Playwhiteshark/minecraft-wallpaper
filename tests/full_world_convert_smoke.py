@@ -13,6 +13,7 @@ import socket
 import time
 import urllib.request
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -90,6 +91,15 @@ def run():
         assert (world / "region" / "r.0.0.mca").is_file()
         print(f"PASS: two adjacent genuine synthetic Anvil chunks → {tiles} real native Vantage tile(s), textures and manifests")
 
+        # A current Minecraft 26.1+ save stores the Overworld region here,
+        # not under the old top-level region/ directory. Test upstream's
+        # native resolver against that real layout, without writing an adapter.
+        modern_region = world / "dimensions" / "minecraft" / "overworld" / "region"
+        modern_region.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(world / "region"), str(modern_region))
+        assert not (world / "region").exists()
+        assert (modern_region / "r.0.0.mca").is_file()
+
         # Also test the *default* product path: no full-world conversion first,
         # live starts against the save itself and produces genuine native tiles.
         live_cache = root / "live-cache"
@@ -126,7 +136,7 @@ def run():
                 tile_bytes = response.read()
             assert len(tile_bytes) > 100, "Live produced no real streamed geometry"
             assert (live_cache / "tiles" / "t.0.0.vtile").is_file()
-            print("PASS: real native Vantage live → on-demand tile → embedded HTTP viewer")
+            print("PASS: Minecraft 26.1+ dimension layout → native Vantage live → on-demand tile → embedded HTTP viewer")
         finally:
             process.terminate() if process.poll() is None else None
             try:
