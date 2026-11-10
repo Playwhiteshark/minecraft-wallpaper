@@ -140,7 +140,7 @@ def test_full_refresh_and_unchanged(tmp_path,monkeypatch):
     assert first['stats']['animals']==5
     assert first['stats']['blocks']>100
     assert first['stats']['faces']>50
-    assert first['stats']['landscapeSamples'] > 0
+    assert first['stats']['landscapeSamples'] == 0
     html=app.output_folder()/'index.html'
     assert 'MWW-OWNED-WALLPAPER-V1' in html.read_text()
     data=verify_scene_script((app.output_folder()/'scene-data.js').read_bytes())
@@ -148,11 +148,24 @@ def test_full_refresh_and_unchanged(tmp_path,monkeypatch):
     assert any(x['type']=='happy_ghast' for x in data['entities'])
     assert any(t.get('png') for t in data['tiles'])
     assert data['opaque'] and data['alpha']
-    assert data['landscape']['present'] > 0
+    assert data['landscape'] is None
     second=app.refresh(cfg)
     assert second['status']=='unchanged'
     assert original==[hashlib.sha256(p.read_bytes()).digest() for p in source_files]
     assert not list(app.output_folder().glob('.mww-*'))
+
+
+def test_legacy_landscape_setting_is_ignored_on_refresh(tmp_path, monkeypatch):
+    world, jar = make_world(tmp_path)
+    monkeypatch.setenv('MWW_DATA_DIR', str(tmp_path / 'owned-output'))
+    config = make_config(world, jar)
+    config['shots'][0]['landscape_radius'] = 128  # v0.2/v0.3 saved value
+    result = app.refresh(config, force=True)
+    assert result['stats']['landscapeSamples'] == 0
+    scene = verify_scene_script((app.output_folder() / 'scene-data.js').read_bytes())
+    assert scene['landscape'] is None
+    # Existing shot choice is not overwritten except on explicit Save.
+    assert config['shots'][0]['landscape_radius'] == 128
 
 
 def test_rollback_on_corrupted_source(tmp_path,monkeypatch):
