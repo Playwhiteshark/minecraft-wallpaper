@@ -19,3 +19,13 @@ jobs:
       - run: python -m pip install pytest
       - run: python -m pytest -q
       - run: node --check web/viewer.js
+      - run: node --check web/entity-models.js
+      - run: node --test tests/entity_models.test.js
+      # One browser-level check for real textured-mob GPU draw calls.
+      # Playwright is CI-only; it is not shipped with the wallpaper.
+      - if: runner.os == 'Linux'
+        run: python -m pip install playwright
+      - if: runner.os == 'Linux'
+        run: python -m playwright install chromium
+      - if: runner.os == 'Linux'
+        run: python tests/webgl_mob_smoke.py

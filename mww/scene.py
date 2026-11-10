@@ -21,6 +21,8 @@ from pathlib import Path
 
 from .nbt import RegionReader, WorldFormatError, block_name, block_properties, entity_records, iterate_blocks, level_info
 from .landscape import build_landscape, SAMPLE
+from .entities import scan_saved_entities
+from .mob_assets import build_entity_assets
 
 AIR = {'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air'}
 GAS = {'minecraft:water', 'minecraft:lava'}
@@ -376,19 +378,53 @@ def build_scene(world: Path, options: dict):
               centre[1] + above, centre[2] - radius, centre[2] + radius)
     jar = find_client_jar(str(options.get('jar', '')))
     surroundings_radius = int(options.get('landscape_radius', 128))
+    mob_radius = int(options.get('mob_radius', max(64, radius)))
+    if not 8 <= mob_radius <= 192:
+        raise ValueError('Mob search radius must be between 8 and 192')
+    selection = options.get('mob_ids')
+    if selection is not None and (not isinstance(selection, list) or
+                                  len(selection) > 256 or
+                                  any(not isinstance(key, str) or len(key) > 200
+                                      for key in selection)):
+        raise ValueError('Invalid selected mob identities')
     if surroundings_radius < 0 or surroundings_radius > 192 or (surroundings_radius and surroundings_radius < radius + 8):
         raise ValueError('Surroundings radius must be 0 (off) or from detailed radius + 8 to 192')
     check_world_closed(world)
-    source_bounds = (centre[0] - max(radius, surroundings_radius),
-                     centre[0] + max(radius, surroundings_radius), bounds[2], bounds[3],
-                     centre[2] - max(radius, surroundings_radius),
-                     centre[2] + max(radius, surroundings_radius))
+    source_span = max(radius, surroundings_radius, mob_radius if selection is not None else radius)
+    source_bounds = (centre[0] - source_span, centre[0] + source_span, bounds[2], bounds[3],
+                     centre[2] - source_span, centre[2] + source_span)
     before = input_fingerprint(world, dimname, source_bounds, jar)
     if not any('/region/' in p.replace('\\', '/') for p, _, _ in before):
         raise WorldFormatError('No region files near the selected coordinates. Check the dimension and saved base position, or confirm chunks were generated there.')
     region_dir = dimension_directory(world, dimname)
     blocks = extract_blocks(region_dir, bounds, info['data_version'])
-    entities = extract_entities(region_dir, bounds) if bool(options.get('pets', True)) else []
+    found = []
+    chosen = []
+    absent_ids = []
+    if bool(options.get('pets', True)):
+        scan_radius = mob_radius if selection is not None else radius
+        scan_bounds = (centre[0] - scan_radius, centre[0] + scan_radius, None, None,
+                       centre[2] - scan_radius, centre[2] + scan_radius)
+        found = scan_saved_entities(region_dir, scan_bounds, all_heights=True)
+        if selection is None:  # v0.1 backwards-compatible automatic inclusion
+            chosen = [e for e in found if 'minecraft:' + e['type'] in ENTITY_TYPES and
+                      bounds[0] <= e['pos'][0] <= bounds[1] and
+                      bounds[2] - 6 <= e['pos'][1] <= bounds[3] + 6 and
+                      bounds[4] <= e['pos'][2] <= bounds[5]]
+        else:
+            by_key = {e['key']: e for e in found}
+            chosen = [by_key[key] for key in dict.fromkeys(selection) if key in by_key]
+            absent_ids = [key for key in dict.fromkeys(selection) if key not in by_key]
+    if len(chosen) > 128:
+        raise ValueError('This shot selects more than 128 saved mobs. Narrow the selection.')
+    entities = [{key: e.get(key) for key in ('type', 'pos', 'yaw', 'baby',
+                  'variant', 'tame', 'collar')} for e in chosen]
+    # Asset data is local output only, never added to this repository.
+    # Missing model/texture is surfaced rather than silently being called
+    # an accurately rendered Minecraft mob.
+    cache_root = Path(str(options.get('model_cache') or Path.home() / '.mww-model-cache'))
+    model_pack, model_warnings = build_entity_assets(
+        entities, cache_root, jar, fetch_missing=bool(options.get('fetch_models', False)))
     surroundings = build_landscape(region_dir, centre, radius, surroundings_radius,
                                    color_for=fallback_color)
     bank = TextureBank(jar)
@@ -410,11 +446,16 @@ def build_scene(world: Path, options: dict):
         'tiles': tiles,
         'landscape': surroundings,
         'lights': lights_near(blocks, centre),
-        'entities': entities[:32],
+        'entities': entities,
+        'entityAssets': model_pack,
         'camera': {'yaw': float(options.get('yaw', 42)), 'pitch': float(options.get('pitch', 22)),
                    'distance': float(options.get('distance', radius * 2.2))},
         'stats': {'blocks': len(blocks), 'faces': (len(opaque) + len(alpha)) // FACE.size,
                   'animals': len(entities), 'textures': len(tiles),
+                   'mobFound': len(found), 'mobSelected': len(chosen),
+                   'mobTextured': sum(bool(e.get('texture') and e['type'] in model_pack['models'])
+                                      for e in entities),
+                   'mobMissing': len(absent_ids), 'mobWarnings': model_warnings[:8],
                    'landscapeSamples': surroundings['present'] if surroundings else 0,
                   'sourceJar': jar.name if jar else 'none (colour fallback)'},
     }
@@ -444,6 +485,16 @@ def verify_scene_script(data: bytes):
         payload = base64.b64decode(landscape['samples'], validate=True)
         if len(payload) != int(landscape['size']) ** 2 * SAMPLE.size:
             raise ValueError('Invalid landscape sample records')
+    pack = scene.get('entityAssets')
+    if pack is not None:
+        if pack.get('version') != 1 or not isinstance(pack.get('models'), dict) or not isinstance(pack.get('textures'), dict):
+            raise ValueError('Unsupported mob model package')
+        if len(pack['models']) > 64 or len(pack['textures']) > 200:
+            raise ValueError('Mob model package is too large')
+        for png in pack['textures'].values():
+            raw = base64.b64decode(png, validate=True)
+            if not raw.startswith(b'\x89PNG\r\n\x1a\n') or len(raw) > 2_000_000:
+                raise ValueError('Invalid mob texture data')
     return scene
 
 
@@ -452,10 +503,10 @@ def publish_scene(scene: dict, output: Path, web_source: Path):
     output.mkdir(parents=True, exist_ok=True)
     generated = scene_script(scene)
     verify_scene_script(generated)
-    for filename in ('index.html', 'viewer.js', 'viewer.css'):
+    for filename in ('index.html', 'viewer.js', 'entity-models.js', 'viewer.css'):
         if not (web_source / filename).is_file():
             raise FileNotFoundError(web_source / filename)
-    for filename in ('index.html', 'viewer.js', 'viewer.css'):
+    for filename in ('index.html', 'viewer.js', 'entity-models.js', 'viewer.css'):
         target = output / filename
         data = (web_source / filename).read_bytes()
         # Safe to replace only files created by this app's dedicated output folder.
@@ -485,12 +536,13 @@ def scene_fingerprint(world: Path, options: dict):
               centre[2] - radius, centre[2] + radius)
     jar = find_client_jar(str(options.get('jar', '')))
     scenery = int(options.get('landscape_radius', 128))
+    mob_search = int(options.get('mob_radius', radius)) if options.get('mob_ids') is not None else radius
     if scenery < 0 or scenery > 192 or (scenery and scenery < radius + 8):
         raise ValueError('Invalid surroundings radius')
-    span = max(radius, scenery)
+    span = max(radius, scenery, mob_search)
     extra_bounds = (centre[0] - span, centre[0] + span, bounds[2], bounds[3],
                     centre[2] - span, centre[2] + span)
     files = input_fingerprint(world, dim, extra_bounds, jar)
-    stable_options = {k: v for k, v in options.items() if k != 'world'}
+    stable_options = {k: v for k, v in options.items() if k not in ('world', 'model_cache', 'fetch_models')}
     payload = json.dumps([files, stable_options], sort_keys=True).encode('utf-8')
     return hashlib.sha256(payload).hexdigest()

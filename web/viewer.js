@@ -17,7 +17,7 @@
   document.body.classList.add(scene.light === 'night' ? 'night' : scene.light === 'day' ? 'day' : 'golden');
   if (new URLSearchParams(location.search).has('preview')) document.body.classList.add('preview');
   document.getElementById('world-title').textContent = scene.name || 'Minecraft Living World';
-  document.getElementById('location-title').textContent = `${scene.dimension || 'overworld'}  ·  ${(scene.stats || {}).blocks || 0} blocks  ·  ${(scene.stats || {}).faces || 0} faces  ·  ${(scene.entities || []).length} animals`;
+  document.getElementById('location-title').textContent = `${scene.dimension || 'overworld'} · ${(scene.stats || {}).blocks || 0} blocks · ${(scene.stats || {}).faces || 0} faces · ${scene.stats?.mobTextured ?? (scene.entities||[]).length}/${(scene.entities || []).length} textured mobs`;
 
   // Camera math: column-major matrices, no 3D runtime dependencies.
   const rad = d => d * Math.PI / 180;
@@ -140,6 +140,34 @@
       vec3 base=tex.rgb*vTint;
       vec3 color=doFog(grade(shade(base,vPos,vNormal)),vPos);
       frag=vec4(color,uTransparent?min(tex.a,.83):tex.a);
+    }`;
+  // Real vanilla entity UVs use the same lighting/fog material functions.
+  const modelVS = `#version 300 es
+    precision highp float;
+    layout(location=0) in vec3 aPos;
+    layout(location=1) in vec3 aNormal;
+    layout(location=2) in vec2 aUV;
+    layout(location=3) in vec3 aTint;
+    layout(location=4) in float aFloat;
+    uniform mat4 uMVP;uniform float uTime;
+    out vec3 vPos;out vec3 vNormal;out vec2 vUV;out vec3 vTint;
+    void main(){
+      vec3 p=aPos;
+      if(aFloat>.5)p.y+=sin(uTime*.55+p.x*.17+p.z*.24)*.13;
+      vPos=p;vNormal=aNormal;vUV=aUV;vTint=aTint;
+      gl_Position=uMVP*vec4(p,1.);
+    }`;
+  const modelFS = `#version 300 es
+    precision highp float;
+    in vec3 vPos;in vec3 vNormal;in vec2 vUV;in vec3 vTint;
+    uniform sampler2D uModelTexture;
+    ${lighting}
+    out vec4 frag;
+    void main(){
+      vec4 tex=texture(uModelTexture,vUV);
+      if(tex.a<.12)discard;
+      vec3 result=doFog(grade(shade(tex.rgb*vTint,vPos,vNormal)),vPos);
+      frag=vec4(result,tex.a);
     }`;
   const petVS = `#version 300 es
     precision highp float;
@@ -309,11 +337,56 @@
     return mesh;
   }
 
-  let terrain, pets, opaque, alpha, petMesh, landscapeMesh;
+  function modelVAO(verts){
+    const vao=gl.createVertexArray();gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER,verts,gl.STATIC_DRAW);
+    const stride=48;
+    for(const [i,n,offset] of [[0,3,0],[1,3,12],[2,2,24],[3,3,32],[4,1,44]]){
+      gl.enableVertexAttribArray(i);
+      gl.vertexAttribPointer(i,n,gl.FLOAT,false,stride,offset);
+    }
+    gl.bindVertexArray(null);
+    return {vao,count:verts.length/12};
+  }
+  function loadModelTextures(textures){
+    const results={};
+    return Promise.all(Object.entries(textures||{}).map(([key,encoded])=>
+      new Promise((resolve,reject)=>{
+        const im=new Image();
+        im.onload=()=>{
+          try{
+            const texture=gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D,texture);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+            gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,im);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+            results[key]=texture;resolve();
+          }catch(e){reject(e);}
+        };
+        im.onerror=()=>reject(new Error('Invalid Minecraft mob texture: '+key));
+        im.src='data:image/png;base64,'+encoded;
+      })
+    )).then(()=>results);
+  }
+
+  let terrain, pets, models, opaque, alpha, petMesh, landscapeMesh, modelMeshes=[];
   try{
     terrain=program(terrainVS,terrainFS);pets=program(petVS,petFS);
+    models=program(modelVS,modelFS);
     opaque=faceVAO(scene.opaque);alpha=faceVAO(scene.alpha);
-    petMesh=petVAO(petGeometry(scene.entities||[],scene.origin||[0,0,0]));
+    // Old generated scenes keep their simple models; new scenes do not
+    // describe coloured cubes as real Minecraft entity geometry.
+    petMesh=petVAO(scene.entityAssets?new Float32Array():
+      petGeometry(scene.entities||[],scene.origin||[0,0,0]));
+    if(scene.entityAssets&&window.MWW_ENTITY_MODELS){
+      for(const item of window.MWW_ENTITY_MODELS.create(
+          scene.entities||[],scene.entityAssets,scene.origin||[0,0,0]))
+        modelMeshes.push({texture:item.texture,mesh:modelVAO(item.vertices)});
+    }
     landscapeMesh=petVAO(landscapeGeometry(scene.landscape,Number(scene.radius||24)));
   }catch(e){return fail('WebGL scene creation failed: '+e.message);}
   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
@@ -443,7 +516,21 @@
     const bottom=Math.min(surfaceFocus[1]-2,pY[0]-1);
     const top=Math.max(surfaceFocus[1]+3,pY[pY.length-1]+4);
     allFocus[1]=(bottom+top)/2;
-    const r=Math.max(4,Number(scene.radius||24));
+    // Manual mob choices can lie beyond the detailed base bounds. The All
+    // button must actually show them, not just expand the vertical crop.
+    const detailedRadius=Math.max(4,Number(scene.radius||24));
+    const xs=[-detailedRadius,detailedRadius],zs=[-detailedRadius,detailedRadius];
+    for(const entity of scene.entities||[]){
+      const p=entity.pos||[];
+      if(p.length<3||!p.every(Number.isFinite))continue;
+      xs.push(p[0]-scene.origin[0]);
+      zs.push(p[2]-scene.origin[2]);
+    }
+    allFocus[0]=(Math.min(...xs)+Math.max(...xs))/2;
+    allFocus[2]=(Math.min(...zs)+Math.max(...zs))/2;
+    const r=Math.max(detailedRadius,
+      (Math.max(...xs)-Math.min(...xs))/2,
+      (Math.max(...zs)-Math.min(...zs))/2)+4;
     const halfSpan=(top-bottom)/2;
     const cp=Math.abs(Math.cos(initialPitch)),sp=Math.abs(Math.sin(initialPitch));
     const vHalf=halfSpan*cp+r*.85*sp;
@@ -457,7 +544,7 @@
   let firstFocus=baseFocus;
   let yaw=initialYaw,pitch=initialPitch,mouseX=0,mouseY=0,motion=true,paused=false;
   let distance=baseDistance;
-  let lastDraw=0,frameQueued=false,atlas=null;
+  let lastDraw=0,frameQueued=false,atlas=null,modelTextures={};
   let dragging=false,dragX=0,dragY=0;
   const start=performance.now();
   function draw(now=performance.now()){
@@ -489,6 +576,22 @@
     gl.uniform1i(gl.getUniformLocation(terrain,'uTransparent'),0);
     gl.bindVertexArray(opaque.vao);gl.drawArraysInstanced(gl.TRIANGLES,0,6,opaque.count);
     if(gl.getError()!==gl.NO_ERROR){paused=true;return fail('Terrain drawing failed in WebGL. Try a smaller radius or report the browser/GPU and displayed face count.');}
+    if(modelMeshes.length){
+      commonUniforms(models,mvp,eye,elapsed);
+      gl.uniform1f(gl.getUniformLocation(models,'uTime'),elapsed);
+      gl.uniform1i(gl.getUniformLocation(models,'uModelTexture'),1);
+      gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+      gl.activeTexture(gl.TEXTURE1);
+      for(const entry of modelMeshes){
+        const texture=modelTextures[entry.texture];
+        if(!texture)continue;
+        gl.bindTexture(gl.TEXTURE_2D,texture);
+        gl.bindVertexArray(entry.mesh.vao);
+        gl.drawArrays(gl.TRIANGLES,0,entry.mesh.count);
+      }
+      gl.disable(gl.BLEND);
+      gl.activeTexture(gl.TEXTURE0);
+    }
     commonUniforms(pets,mvp,eye,elapsed);
     gl.bindVertexArray(petMesh.vao);gl.drawArrays(gl.TRIANGLES,0,petMesh.count);
     if(alpha.count){
@@ -537,5 +640,9 @@
   // Wallpaper is capped at 10fps while gently animated; otherwise it renders on interaction only.
   setInterval(()=>{if(!paused&&!document.hidden&&motion&&(scene.entities?.length || true))request();},100);
   if(!opaque.count&&!alpha.count)fail('The generated scene has zero visible block faces. Check the selected height range and regenerate.');
-  else loadAtlas(scene.tiles||[]).then(a=>{atlas=a;request();}).catch(e=>fail('Texture loading failed: '+e.message));
+  else Promise.all([
+    loadAtlas(scene.tiles||[]),
+    loadModelTextures(scene.entityAssets?.textures||{})
+  ]).then(([a,t])=>{atlas=a;modelTextures=t;request();})
+    .catch(e=>fail('Texture loading failed: '+e.message));
 })();
