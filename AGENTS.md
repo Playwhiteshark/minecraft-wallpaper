@@ -14,7 +14,11 @@ Success means **real save → discovered saved world/chunks → actual geometry/
 
 The user postponed 8-block sampled terrain/LOD and cosmetic shaders. Keep this experiment disabled and do not describe it as surroundings. Prioritise complete basic functionality and modular boundaries; shaders, pet highlight rings, performance optimizations and fancy visual effects follow. A camera's view must use actual saved chunks and preserve real coordinates; unexplored world remains missing rather than fabricated.
 
-## 4. MODULE OWNERSHIP AND SAFE UPDATES
+## 4. FULL COVERAGE DOES NOT MEAN FULL PREBAKE OR GPU RESIDENCY
+
+Normal wallpaper operation must use the existing Vantage `live` pipeline: index accessible real generated chunks, bake only camera-requested tiles, retain disk cache, let upstream Three.js stream a memory-bounded relevant set. Do **not** make a complete offline export a prerequisite. Do not force `--caves full` for outdoor wallpaper scenes; use native hidden-cave culling by default, and preserve optional deep-cave support without fabricating coarse geography. A successful HTTP page or an empty tile manifest is **not** proof of successful world rendering. Always include native converter logs for zero-tile failures and verify a genuine tile request.
+
+## 5. MODULE OWNERSHIP AND SAFE UPDATES
 
 Keep world reading/conversion, resource packs/materials, scene package/manifest, camera/config, renderer adapter, Lively host, and optional mobs independently replaceable. Never commit user save data, coordinates, identity keys, Mojang assets, or personal operational/agent notes. Leave private coordination in personal-ops. Don't alter source worlds. Keep last-good output; run automated cross-platform + browser tests and minimise manual acceptance asks.
 

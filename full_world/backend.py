@@ -98,6 +98,35 @@ def require_engine(state_root: Path, *, allow_download: bool = False) -> Path:
     return exe
 
 
+
+def prepare_client_assets(binary: Path, client_jar: Path | None,
+                          on_progress=None) -> Path | None:
+    """Use Vantage's asset extractor; never build substitute block models."""
+    if client_jar is None:
+        return None
+    jar = Path(client_jar).expanduser().resolve()
+    if not jar.is_file() or jar.suffix.lower() != ".jar":
+        raise ConversionError("The chosen Minecraft client JAR does not exist")
+    if on_progress:
+        on_progress("Extracting selected Minecraft client textures locally…")
+    try:
+        result = subprocess.run([str(binary), "extract", str(jar)],
+                                capture_output=True, text=True, timeout=240)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ConversionError("Cannot extract selected Minecraft JAR: " + str(exc)) from exc
+    if result.returncode:
+        raise ConversionError("Cannot extract selected Minecraft JAR:\n" +
+                              (result.stdout + result.stderr)[-2400:])
+    user_home = Path(os.environ.get("HOME") or
+                     os.environ.get("USERPROFILE") or Path.home())
+    assets = (user_home / ".cache" / "vantage" / "assets" /
+              jar.stem / "assets" / "minecraft")
+    if not (assets / "blockstates").is_dir():
+        raise ConversionError("Vantage extraction reported success but no blockstates were found at " +
+                              str(assets))
+    return assets
+
+
 def validate_render(folder: Path) -> tuple[int, int]:
     """Check the native output contract, not a toy/heightfield scene."""
     index = folder / "world.json"
@@ -152,7 +181,7 @@ class VantageConverter:
 
     def render(self, world: Path, world_key: str, *, allow_download: bool = False,
                memory_mib: int = 768, client_jar: Path | None = None,
-               on_progress=None) -> RenderResult:
+               caves_full: bool = False, on_progress=None) -> RenderResult:
         world = Path(world).resolve()
         if not (world / "level.dat").is_file():
             raise ConversionError("Select a Minecraft Java save folder containing level.dat")
@@ -173,26 +202,13 @@ class VantageConverter:
         before_files = world_snapshot(world)
         command = [
             str(binary), "render", str(world), "--out", str(staging),
-            "--caves", "full", "--memory", str(memory_mib),
-        ]  # No --radius: render every saved generated chunk.
+            "--memory", str(memory_mib),
+        ]  # No --radius: all saved chunks; Vantage culls hidden deep caves by default.
+        if caves_full:
+            command.extend(["--caves", "full"])
         try:
-            if client_jar:
-                client_jar = Path(client_jar).expanduser().resolve()
-                if not client_jar.is_file() or client_jar.suffix.lower() != ".jar":
-                    raise ConversionError("The chosen Minecraft client JAR does not exist")
-                if on_progress:
-                    on_progress("Extracting your selected Minecraft client textures locally…")
-                extracted = subprocess.run(
-                    [str(binary), "extract", str(client_jar)],
-                    capture_output=True, text=True, timeout=240)
-                if extracted.returncode:
-                    raise ConversionError("Cannot extract chosen Minecraft JAR: " +
-                                          (extracted.stdout + extracted.stderr)[-2000:])
-                # Vantage's documented native cache path for a supplied jar.
-                home = Path(os.environ.get("HOME") or os.environ.get("USERPROFILE") or Path.home())
-                assets = home / ".cache" / "vantage" / "assets" / client_jar.stem / "assets" / "minecraft"
-                if not (assets / "blockstates").is_dir():
-                    raise ConversionError("Native converter did not publish the extracted client assets")
+            assets = prepare_client_assets(binary, client_jar, on_progress)
+            if assets is not None:
                 command.extend(["--assets", str(assets)])
             if on_progress:
                 on_progress("Vantage is converting real chunks across the saved world…")
@@ -204,7 +220,16 @@ class VantageConverter:
                 excerpt = (home / "last-render.log").read_text(
                     encoding="utf-8", errors="replace")[-2200:]
                 raise ConversionError("Vantage conversion failed:\n" + excerpt)
-            dimensions, tiles = validate_render(staging)
+            try:
+                dimensions, tiles = validate_render(staging)
+            except ConversionError as exc:
+                log_tail = (home / "last-render.log").read_text(
+                    encoding="utf-8", errors="replace")[-2400:]
+                raise ConversionError(
+                    f"{exc}. See converter diagnostics below. "
+                    "Unreadable terrain, incompatible chunk formats, or missing assets "
+                    "must be reported, not replaced with fabricated geometry.\n"
+                    + log_tail) from exc
             check_world_closed(world)
             if before_files != world_snapshot(world):
                 raise ConversionError("The saved Minecraft world changed while rendering; previous wallpaper preserved")

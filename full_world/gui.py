@@ -15,7 +15,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from .backend import ConversionError, VantageConverter
 from .config import (camera_url, current_world, default_state, load_state,
                      register_world, save_state, state_dir)
-from .service import (set_login_startup, start_viewer, stop_viewer,
+from .service import (set_login_startup, start_live_viewer, stop_viewer,
                       viewer_url)
 
 
@@ -50,7 +50,7 @@ def main():
     migrate_selected_legacy_world(registry)
     converter = VantageConverter(root_dir)
     root = tk.Tk()
-    root.title("Minecraft Living World — Full World")
+    root.title("Minecraft Living World — Live Viewer")
     root.geometry("970x810")
     root.minsize(780, 610)
     bg, fg = "#101c2a", "#eef3fa"
@@ -72,7 +72,7 @@ def main():
     fields = {k: tk.StringVar() for k in
               ("x", "y", "z", "distance", "rotation", "tilt")}
     startup = tk.BooleanVar(value=bool(registry.get("startup", False)))
-    status = tk.StringVar(value="Ready. A full-world render includes every saved chunk, not an 8-block terrain approximation.")
+    status = tk.StringVar(value="Ready. Open the camera-driven viewer; full-world export is optional.")
     info = tk.StringVar(value="No world selected")
     busy = [False]
     world_entries = []
@@ -104,7 +104,7 @@ def main():
         view_entries.clear()
         try:
             _, world, current = current_world(registry, root_dir)
-            info.set(f'World: {world["name"]} · {"Rendered" if current else "Needs rendering"} · {world["path"]}')
+            info.set(f'World: {world["name"]} · {"Offline export ready" if current else "Live viewing available"} · {world["path"]}')
             jar_var.set(world.get("jar", ""))
             view_entries.extend(world.get("views", []))
             view_combo["values"] = [view["name"] for view in view_entries]
@@ -151,7 +151,7 @@ def main():
             key, _ = register_world(registry, Path(path))
             save()
             show_world()
-            status.set("Registered a real saved world. Click Build full world.")
+            status.set("Registered the saved world. Select a camera and click Open viewer.")
         except Exception as exc:
             messagebox.showerror("Minecraft world", str(exc))
 
@@ -200,7 +200,7 @@ def main():
             return
         busy[0] = True
         build_button.configure(state="disabled")
-        status.set("Preparing pinned native converter. This is a one-time download if missing…")
+        status.set("Preparing optional offline export. The live viewer does not require this step…")
         def notify(message):
             root.after(0, lambda: status.set(message))
         def worker():
@@ -209,7 +209,7 @@ def main():
                 result = converter.render(world_path, key, allow_download=True,
                                           client_jar=Path(world["jar"]) if world.get("jar") else None,
                                           on_progress=notify)
-                url = start_viewer(result.directory, int(registry.get("port", 8787)), root_dir)
+                url = None  # Keep the live viewer untouched; offline export is only a cacheable option.
             except Exception as exc:
                 error = str(exc)
             def finish():
@@ -220,39 +220,68 @@ def main():
                     messagebox.showerror("Full-world build", error)
                 else:
                     info.set(f"{world['name']} · {result.tiles:,} genuine saved-world tiles in {result.dimensions} dimension(s)")
-                    status.set("Full-world renderer is running at " + url +
-                               " — copy its URL into Lively as a Web wallpaper.")
+                    status.set("Optional full-world export completed. Open viewer still uses on-demand streaming.")
             root.after(0, finish)
         threading.Thread(target=worker, daemon=True).start()
 
-    def ensure_started() -> str:
-        view = persist_view()
-        key, world, folder = current_world(registry, root_dir)
-        if folder is None:
-            raise ConversionError("Build this world first. It has no converted geometry.")
-        address = start_viewer(folder, int(registry.get("port", 8787)), root_dir)
-        return camera_url(address, view)
+    def start_camera(action: str):
+        if busy[0]:
+            return
+        try:
+            view = persist_view()
+            key, world, _ = current_world(registry, root_dir)
+            world_path = Path(world["path"])
+            jar_text = jar_var.get().strip()
+            if world.get("jar", "") != jar_text:
+                world["jar"] = jar_text
+                save()
+        except Exception as exc:
+            messagebox.showerror("Camera", str(exc))
+            return
+        busy[0] = True
+        build_button.configure(state="disabled")
+        status.set("Opening Vantage live: reading saved chunks and preparing the first visible tile…")
+
+        def worker():
+            error, url = None, None
+            try:
+                address = start_live_viewer(
+                    world_path, key, view.get("dimension", "overworld"),
+                    int(registry.get("port", 8787)), root_dir,
+                    client_jar=Path(jar_text) if jar_text else None,
+                    allow_download=True)
+                url = camera_url(address, view)
+            except Exception as exc:
+                error = str(exc)
+
+            def finish():
+                busy[0] = False
+                build_button.configure(state="normal")
+                if error:
+                    status.set("Live viewer failed. No fabricated terrain was substituted.")
+                    messagebox.showerror("Vantage live viewer", error)
+                    return
+                if action == "open":
+                    webbrowser.open(url)
+                    status.set("Opened the native on-demand 3D renderer in the browser.")
+                else:
+                    root.clipboard_clear()
+                    root.clipboard_append(url)
+                    root.update()
+                    status.set("Copied the live camera URL for Lively's Web Page wallpaper.")
+                    messagebox.showinfo(
+                        "Lively Wallpaper",
+                        "Web URL copied:\n" + url +
+                        "\n\nLively → Add Wallpaper → Web Page. "
+                        "Leave this native viewer running while the wallpaper is displayed.")
+            root.after(0, finish)
+        threading.Thread(target=worker, daemon=True).start()
 
     def open_view():
-        try:
-            webbrowser.open(ensure_started())
-            status.set("Opened the real saved-world renderer in your browser.")
-        except Exception as exc:
-            messagebox.showerror("Open full world", str(exc))
+        start_camera("open")
 
     def copy_link():
-        try:
-            url = ensure_started()
-            root.clipboard_clear()
-            root.clipboard_append(url)
-            root.update()
-            status.set("Copied camera URL. In Lively: Add Wallpaper → Web Page → paste URL.")
-            messagebox.showinfo("Lively Wallpaper",
-                "Web URL copied:\n" + url +
-                "\n\nIn Lively, add a Web Page wallpaper using this address. "
-                "This small local viewer must be running while the wallpaper is displayed.")
-        except Exception as exc:
-            messagebox.showerror("Lively URL", str(exc))
+        start_camera("copy")
 
     def stop():
         if stop_viewer(root_dir):
@@ -315,7 +344,7 @@ def main():
     body.pack(fill="both", expand=True)
     ttk.Label(body, text="MINECRAFT LIVING WORLD",
               font=("Segoe UI Semibold", 19)).pack(anchor="w")
-    ttk.Label(body, text="Full saved-world pipeline · Native Vantage geometry · Three.js GPU rendering · Lively",
+    ttk.Label(body, text="Camera-driven Vantage streaming · Native Minecraft geometry · Three.js GPU rendering · Lively",
               font=("Segoe UI", 10)).pack(anchor="w", pady=(2, 15))
 
     ttk.Label(body, text="1   SAVED WORLD", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=5)
@@ -341,10 +370,10 @@ def main():
     ttk.Label(body, text="Optional. Leave empty to let Vantage discover your installed vanilla assets.",
               wraplength=865).pack(anchor="w", pady=(0, 8))
 
-    ttk.Label(body, text="2   COMPLETE WORLD CONVERSION", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=5)
-    ttk.Label(body, text="Uses the pinned Vantage native executable. All saved generated chunks; no crop radius or 8-block sampling.",
+    ttk.Label(body, text="2   OPTIONAL OFFLINE EXPORT", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=5)
+    ttk.Label(body, text="Not needed to open the viewer. Exports all saved chunks for an offline map. Live viewing converts only requested tiles; deep caves are excluded by default.",
               wraplength=860).pack(anchor="w", pady=3)
-    build_button = ttk.Button(body, text="Build full saved world", command=run_build)
+    build_button = ttk.Button(body, text="Export full world (optional)", command=run_build)
     build_button.pack(anchor="w", pady=(7, 16))
 
     ttk.Label(body, text="3   CAMERA LOCATIONS", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=5)
@@ -373,17 +402,17 @@ def main():
         grid.columnconfigure(i, weight=1)
     ttk.Button(body, text="Save camera", command=save_view).pack(anchor="w", pady=(5, 14))
 
-    ttk.Label(body, text="4   VIEW IN BROWSER OR LIVELY", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=5)
+    ttk.Label(body, text="4   OPEN LIVE VIEW IN BROWSER OR LIVELY", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=5)
     row = ttk.Frame(body)
     row.pack(fill="x", pady=8)
-    ttk.Button(row, text="Open full-world viewer", command=open_view).pack(side="left")
+    ttk.Button(row, text="Open live viewer", command=open_view).pack(side="left")
     ttk.Button(row, text="Copy Lively Web URL", command=copy_link).pack(side="left", padx=8)
     ttk.Button(row, text="Stop viewer", command=stop).pack(side="left")
     ttk.Checkbutton(body, text="Start the native viewer at Windows login (optional)",
                     variable=startup, command=toggle_startup).pack(anchor="w", pady=8)
     ttk.Separator(body).pack(fill="x", pady=12)
     ttk.Label(body, textvariable=status, wraplength=860).pack(anchor="w", pady=6)
-    ttk.Label(body, text="The original world stays read-only. Your old cropped wallpaper and settings remain untouched.",
+    ttk.Label(body, text="No full-world build is needed. Vantage only bakes requested tiles and retains a private cache; the source world remains read-only.",
               wraplength=860).pack(anchor="w", pady=6)
     def on_close():
         if busy[0]:
