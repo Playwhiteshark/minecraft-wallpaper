@@ -16,7 +16,7 @@ git pull --ff-only
 .\Launch.cmd
 ~~~
 
-Choose your save (the old selected save is reused when possible), then click **Build full saved world**. The application downloads the pinned official **Vantage v0.15.1 native Windows CLI ZIP (about 1 MB)** once, verifies the upstream SHA-256, and keeps the executable in private application data. It converts **all saved/generated chunks**, not merely the base radius. Missing or unexplored areas are never invented. A failed conversion preserves the previous render.
+Choose your save (the old selected save is reused when possible), optionally supply the exact local **Minecraft client JAR** for matching textures, then click **Build full saved world**. The application downloads the pinned official **Vantage v0.15.1 native Windows CLI ZIP (about 1 MB)** once, verifies the upstream SHA-256, and keeps the executable in private application data. It converts **all saved/generated chunks**, not merely the base radius. Missing or unexplored areas are never invented. A failed conversion preserves the previous render.
 
 Click **Open full-world viewer** to navigate the actual saved world. The upstream renderer includes terrain materials, biome colour, saved lighting, caves, multiple dimensions and on-demand tile streaming. Choose and save separate camera locations in the control panel.
 
