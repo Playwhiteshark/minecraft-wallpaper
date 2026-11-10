@@ -541,6 +541,6 @@ def scene_fingerprint(world: Path, options: dict):
     extra_bounds = (centre[0] - span, centre[0] + span, bounds[2], bounds[3],
                     centre[2] - span, centre[2] + span)
     files = input_fingerprint(world, dim, extra_bounds, jar)
-    stable_options = {k: v for k, v in options.items() if k != 'world'}
+    stable_options = {k: v for k, v in options.items() if k not in ('world', 'model_cache', 'fetch_models')}
     payload = json.dumps([files, stable_options], sort_keys=True).encode('utf-8')
     return hashlib.sha256(payload).hexdigest()
