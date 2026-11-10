@@ -227,4 +227,30 @@ def build_entity_assets(entities, cache_root: Path, jar_path: Path | None,
                     entity['passes'] = layers
             if available:
                 pack['models'][kind] = model
+                if kind == 'happy_ghast':
+                    # A harness is a separate model and a separate equipment
+                    # texture, not part of the ghast skin or body mesh.
+                    harnessed = [e for e in entities if e['type'] == kind and e.get('harness') and e.get('texture')]
+                    if harnessed:
+                        harness_model, issue = load_model(
+                            'happy_ghast_harness', cache_root, fetch_missing=fetch_missing)
+                        if harness_model is None:
+                            errors.append('Happy ghast harness model unavailable: ' + str(issue))
+                        else:
+                            pack['models']['happy_ghast_harness'] = harness_model
+                            for e in harnessed:
+                                texture = ('minecraft:textures/entity/equipment/happy_ghast_body/'
+                                           + e['harness'] + '_harness.png')
+                                if texture not in pack['textures']:
+                                    img = _jar_png(jar, texture)
+                                    if img:
+                                        pack['textures'][texture] = img
+                                if texture in pack['textures']:
+                                    e.setdefault('passes', []).append({
+                                        'model': 'happy_ghast_harness',
+                                        'layer': 'main',
+                                        'texture': texture})
+                                else:
+                                    errors.append('Missing ' + e['harness'] +
+                                                  ' happy-ghast harness texture in client JAR')
     return pack, errors
