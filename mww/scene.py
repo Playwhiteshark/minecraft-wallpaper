@@ -377,7 +377,7 @@ def build_scene(world: Path, options: dict):
     bounds = (centre[0] - radius, centre[0] + radius, centre[1] - below,
               centre[1] + above, centre[2] - radius, centre[2] + radius)
     jar = find_client_jar(str(options.get('jar', '')))
-    surroundings_radius = int(options.get('landscape_radius', 128))
+    surroundings_radius = int(options.get('landscape_radius', 0))
     mob_radius = int(options.get('mob_radius', max(64, radius)))
     if not 8 <= mob_radius <= 192:
         raise ValueError('Mob search radius must be between 8 and 192')
@@ -535,7 +535,7 @@ def scene_fingerprint(world: Path, options: dict):
     bounds = (centre[0] - radius, centre[0] + radius, centre[1] - below, centre[1] + above,
               centre[2] - radius, centre[2] + radius)
     jar = find_client_jar(str(options.get('jar', '')))
-    scenery = int(options.get('landscape_radius', 128))
+    scenery = int(options.get('landscape_radius', 0))
     mob_search = int(options.get('mob_radius', radius)) if options.get('mob_ids') is not None else radius
     if scenery < 0 or scenery > 192 or (scenery and scenery < radius + 8):
         raise ValueError('Invalid surroundings radius')
