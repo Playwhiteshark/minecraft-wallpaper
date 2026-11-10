@@ -249,6 +249,7 @@ def main():
                     world_path, key, view.get("dimension", "overworld"),
                     int(registry.get("port", 8787)), root_dir,
                     client_jar=Path(jar_text) if jar_text else None,
+                    camera=(float(view["x"]), float(view["y"]), float(view["z"])),
                     allow_download=True)
                 url = camera_url(address, view)
             except Exception as exc:
