@@ -197,6 +197,10 @@ def start_live_viewer(world: Path, world_key: str, dimension: str, port: int,
         raise ConversionError("Select a Minecraft Java save containing level.dat")
     if len(world_key) != 24 or any(c not in "0123456789abcdef" for c in world_key):
         raise ConversionError("Invalid private world identifier")
+    if dimension not in LIVE_DIMENSIONS:
+        raise ConversionError("Unknown Minecraft dimension")
+    if not 256 <= memory_mib <= 8192:
+        raise ConversionError("Live tile memory budget must be 256–8192 MiB")
     check_world_closed(world)
     binary = require_engine(root, allow_download=allow_download)
     assets = prepare_client_assets(binary, client_jar)
@@ -232,7 +236,7 @@ def start_live_viewer(world: Path, world_key: str, dimension: str, port: int,
             command, cwd=str(cache), stdin=subprocess.DEVNULL,
             stdout=log, stderr=subprocess.STDOUT, close_fds=True,
             creationflags=flags, start_new_session=os.name != "nt")
-    for _ in range(60):
+    for _ in range(160):
         if process.poll() is not None:
             break
         if ping(port) and _live_manifest_ready(port):
