@@ -119,7 +119,9 @@ fn surfaceFloors(a: std.mem.Allocator, g: grid.Grid, depth: u16) ![]usize {
 }
 
 test "surface ribbon excludes deep exposed walls without creating bottom geometry" {
-    const a = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
     var ids = [_]u16{1} ** (2 * 1 * 64);
     // Two genuine adjacent columns: one 64-block cliff, one 16-block ground.
     for (48..64) |y| ids[y * 2 + 1] = grid.AIR;
