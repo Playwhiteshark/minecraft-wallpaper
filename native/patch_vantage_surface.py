@@ -118,11 +118,12 @@ test "surface ribbon excludes deep exposed walls without creating bottom geometr
     const a = std.testing.allocator;
     var ids = [_]u16{1} ** (2 * 1 * 64);
     // Two genuine adjacent columns: one 64-block cliff, one 16-block ground.
-    for (0..48) |y| ids[y * 2 + 1] = grid.AIR;
+    for (48..64) |y| ids[y * 2 + 1] = grid.AIR;
+    var names = [_][]const u8{ "", "minecraft:stone" };
     const g: grid.Grid = .{
         .sx = 2, .sy = 64, .sz = 1,
         .min_x = 0, .min_y = 0, .min_z = 0,
-        .ids = &ids, .names = &.{"", "minecraft:stone"},
+        .ids = &ids, .names = &names,
     };
     const floors = try surfaceFloors(a, g, 8);
     defer a.free(floors);
@@ -189,8 +190,8 @@ def patch_main(source: str) -> str:
         "sh.caveMode(), sh.mesh_threads, sh.surface_depth, null);",
         "native tile build")
     source = replace_once(source,
-        "0, null);\n    const surface = try grid.buildSurface",
-        "0, null, null);\n    const surface = try grid.buildSurface",
+        " }, 0, null);\n    const arr = try builder.finish();",
+        " }, 0, null, null);\n    const arr = try builder.finish();",
         "single tile build")
     return source
 
