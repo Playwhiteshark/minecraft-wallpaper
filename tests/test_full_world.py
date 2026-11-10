@@ -185,6 +185,9 @@ def test_live_command_reuses_upstream_lazy_tiles_without_full_world_bake(tmp_pat
     assert args[args.index("--lod") + 1] == "on"
     assert args[args.index("--players") + 1] == "off"
     assert "--caves" not in args and "--radius" not in args
+    assert args[args.index("--surface-depth") + 1] == "16"
+    nether = service.live_command(binary, world, cache, 8787, "the_nether")
+    assert "--surface-depth" not in nether
     assert "render" not in args and "serve" not in args
     with pytest.raises(ValueError):
         service.live_command(binary, world, cache, 8787, "bad_dimension")
