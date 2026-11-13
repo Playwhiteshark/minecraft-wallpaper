@@ -1,3 +1,26 @@
+# Minecraft Living World — Video Wallpaper (new direction)
+
+**Product decision, 13 November 2026:** We are retiring the **custom 3D wallpaper renderer** and switching to a small, prerecorded **Lively Wallpaper** using the user's real Minecraft footage. The old Vantage project remains in git as a technical archive and is **not** the recommended wallpaper runtime.
+
+**New target:** Three ~2-minute loops (day, sunset, night); optional fourth ~2-minute morning loop. Fixed camera; real Minecraft Complementary shaders, animated grass, moving clouds, water, fire, and important saved mobs captured in-game. Aim for around **500–800 MB total final media**, depending on actual encoded quality; no 24-hour file or always-running Minecraft/Vantage.
+
+**Use existing software, not a new player:**
+- Start by testing **one real 2-minute video** in Lively's native mpv player and its HTML/WebView2 video player, measuring GPU Video Decode, RAM, playback smoothness and whether a loop seam is noticeable.
+- Prefer one **Lively HTML wallpaper** with a tiny internal local-clock scheduler and 2–5-second crossfade *if it performs well*. Lively's documented `LivelyProperties.json` can expose manual override. This is just video and JavaScript, **not a custom rendering engine**.
+- If the WebView2 video layer costs too much or can't decode the preferred format, switch to direct **Lively mpv playback** and Windows Task Scheduler calling Lively's documented `setwp` CLI at chosen local times; accept hard transitions initially.
+- **Codec caveat:** H.264 MP4 is the reliable initial choice for Lively WebView2. HEVC/H.265 must be explicitly tested for OS/Edge decoder support before relying on it; mpv support does not guarantee WebView2 support.
+- Choose capture/crossfade quality in OBS and FFmpeg **offline**; Lively only plays finished video. There is **no runtime** terrain simulation, entity parser, chunk streamer or background HTTP server.
+
+**Read this plan first:** [Video wallpaper architecture, software research, precise file changes and milestones](docs/VIDEO-WALLPAPER-PLAN.md). The [product specification](docs/PRODUCT-SPEC.md) and [engineering rules](AGENTS.md) now reflect it. This is a **planning revision**, not a claim that the new video wallpaper has already been built. Existing `Launch.cmd` and `full_world.py` still launch the old **archived** native experiment; don't run them for the new wallpaper.
+
+---
+
+## Archived: previous native Vantage renderer (NOT the new production plan)
+
+The material below is preserved for provenance and rollback only. Its instructions, constraints and future work are superseded by the video-first plan above.
+
+---
+
 # Minecraft Living World Wallpaper
 
 ## Native camera-driven living-world viewer (default)
