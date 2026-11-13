@@ -1,3 +1,21 @@
+# Research update — 13 November 2026: use Lively + short recorded video
+
+**This is the current recommendation. The 3D renderer research below is archived and does not define the wallpaper runtime.** Full researched architecture and file map: [VIDEO-WALLPAPER-PLAN.md](VIDEO-WALLPAPER-PLAN.md).
+
+Research conclusions:
+
+- **Lively's mpv video player** is native, recommended for local video, hardware decode where supported, and controllable using `setwp`/ `seekwp` CLI. No need to implement any wallpaper host. [Lively Video Guide](https://github.com/lively-community/lively/wiki/Video-Guide), [CLI controls](https://github.com/lively-community/lively/wiki/Command-Line-Controls), [Performance](https://github.com/lively-community/lively/wiki/Performance).
+- **Lively's WebView2 web wallpaper** can play a local HTML5 video; two HTML `video` elements plus a tiny schedule and CSS crossfade can handle clock-sensitive scenes without Windows Task Scheduler. [Web Player](https://github.com/lively-community/lively/wiki/Web-Player), [local web videos](https://github.com/lively-community/lively/wiki/Web-Guide-VI-:-Webpage-Video-Support), [Lively properties](https://github.com/lively-community/lively/wiki/Web-Guide-IV-:-Interaction), [pause API](https://github.com/lively-community/lively/wiki/Web-Guide-V-:-System-Data).
+- **Do not count on native conditional playlist scheduling yet:** the [time-of-day playlist issue](https://github.com/lively-community/lively/issues/137) remains an open request. External scheduling via CLI is supported, but may show hard cuts.
+- **Codec uncertainty matters:** H.264/MP4 is supported by WebView2; H.265/HEVC depends on the Windows extension and available decoder. Verify before assuming compressed HEVC works in a web wallpaper. [Microsoft Edge codec support](https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/development/video-playback-issues).
+- **Recording/compression:** OBS supports safe MKV recordings/remux; FFmpeg can trim/crossfade/encode loops offline. [OBS recording](https://obsproject.com/kb/standard-recording-output-guide), [FFmpeg xfade](https://ffmpeg.org/ffmpeg-filters.html#xfade).
+
+**Design choice:** 3 x ~120 second loops (day, sunset, night) and optional fourth morning loop. Roughly 360–720 MB for 3/4 clips at 8–12 Mbps; test quality and target approximately 500–800 MB total. Compare Lively WebView2 vs native mpv with one actual clip before committing to script architecture. No need for 24 hours of footage, custom Vantage geometry, active mob simulations or a 24-hour video RAM buffer.
+
+---
+
+## Archived research (superseded)
+
 # Existing software, technical research and build-vs-integrate decision
 
 **Reviewed:** 2026-11-09. **Research status:** source-checked candidates, not yet benchmarked or installed for this project. Read [product specification](PRODUCT-SPEC.md) for binding requirements.
