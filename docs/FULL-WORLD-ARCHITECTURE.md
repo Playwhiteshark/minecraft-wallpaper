@@ -1,3 +1,7 @@
+> **ARCHIVED (13 November 2026):** This documents the previously working experimental Vantage 3D renderer. It is **not** the active wallpaper plan. The product now uses short recorded Minecraft videos in Lively with no persistent Minecraft renderer/server. See [VIDEO-WALLPAPER-PLAN.md](VIDEO-WALLPAPER-PLAN.md). Retained only for engineering reference and rollback.
+
+---
+
 # Minecraft Living World — camera-driven native architecture
 
 ## Working definition
