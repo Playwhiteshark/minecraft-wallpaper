@@ -21,3 +21,23 @@ wallpaper-output/
 .local/
 artifacts/
 *.zip
+
+# Video-first wallpaper product: never commit raw captures or encoded Minecraft footage.
+# Protect footage/exports regardless of whether the package is inside wallpaper/.
+*.mp4
+*.mkv
+*.mov
+*.webm
+*.avi
+*.hevc
+*.h265
+*.h264
+*.m4v
+*.gif
+*.wav
+*.flac
+recordings/
+captures/
+wallpaper/media/
+wallpaper/dist/
+wallpaper/export/
