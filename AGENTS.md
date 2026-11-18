@@ -37,6 +37,6 @@ Prefer a single Lively HTML wallpaper with local videos, a tiny independent `pla
 - Tests prioritize scheduler boundaries, manual override, time-zone/sleep/resume handling, Lively package references, correct aspect scaling, missing-media fallback and playback/memory/battery benchmarks. Do not claim a new runtime exists until end-to-end Lively validation on real footage succeeds.
 - After the one-clip mpv vs WebView2 benchmark, record the choice and update this plan; don't implement both production paths.
 
-## Historical mistakes to avoid
+## Design history
 
 Earlier iterations reinvented Minecraft terrain reading/meshing and built a native Vantage tile server to recreate visuals Minecraft already produces accurately, with repeated version and process-lifecycle problems. Those achievements remain in git as a reference, but the product now only needs **good recordings, clean looping, time-aware selection and efficient video playback**. Reusing proven tools and respecting full-pipeline visual acceptance remain non-negotiable.

@@ -20,7 +20,11 @@ def state_dir() -> Path:
     if override:
         return Path(override).expanduser().resolve()
     if os.name == "nt":
-        return Path.home() / "COMPUTER STUFF" / "Minecraft Living World Wallpaper"
+        # Must match app.data_root(): keep an existing early-build folder, otherwise use %LOCALAPPDATA%.
+        legacy = Path.home() / "COMPUTER STUFF" / "Minecraft Living World Wallpaper"
+        if legacy.is_dir():
+            return legacy
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "Minecraft Living World Wallpaper"
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "minecraft-living-wallpaper"
 
 
