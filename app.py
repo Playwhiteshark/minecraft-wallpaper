@@ -34,7 +34,11 @@ def data_root() -> Path:
     if override:
         return Path(override).expanduser().resolve()
     if os.name == 'nt':
-        return Path.home() / 'COMPUTER STUFF' / 'Minecraft Living World Wallpaper'
+        # Early builds stored data in a fixed per-user folder; keep using it when it already exists.
+        legacy = Path.home() / 'COMPUTER STUFF' / 'Minecraft Living World Wallpaper'
+        if legacy.is_dir():
+            return legacy
+        return Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData' / 'Local') / 'Minecraft Living World Wallpaper'
     return Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local' / 'share')) / 'minecraft-living-wallpaper'
 
 

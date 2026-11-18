@@ -36,7 +36,7 @@ This reuses Vantage's own world reader, block models, textures, mesher, tile pro
 Close Minecraft before opening the save in this wallpaper app, then update your existing Git checkout:
 
 ~~~powershell
-cd "$env:USERPROFILE\\CODING STUFF\\minecraft-wallpaper"
+cd path\to\minecraft-wallpaper
 git pull --ff-only
 .\Launch.cmd
 ~~~
@@ -137,7 +137,7 @@ An older **cropped starter** for Windows: transform a bounded part of a Minecraf
 
 Requires **Windows, Python 3.10+ with Tkinter**, Minecraft Java Edition 1.18+ save data, including the 26.1 world-folder layout, a modern browser with WebGL2, and the Lively version you already use. No pip install, Node, Java server, game mod, npm dependencies, external map software, or new background service is required for this starter.
 
-1. Keep Minecraft **closed**. Clone this repository into a permanent project folder (for example `%USERPROFILE%\CODING STUFF\minecraft-wallpaper`) and update it from `main` with `git pull --ff-only`.
+1. Keep Minecraft **closed**. Clone this repository into a permanent project folder (for example `%USERPROFILE%\Projects\minecraft-wallpaper`) and update it from `main` with `git pull --ff-only`.
 2. Double-click **`Launch.cmd`**, or run `py -3 app.py` from PowerShell.
 3. Choose your world from the drop-down or **Browse world** (the selected folder must contain `level.dat`). CurseForge/custom-launcher worlds can be selected by folder.
 4. Use **player position** or **world spawn** as a starting point, then enter the *actual X/Y/Z of your base*. Set the current limited near-base radius (start at 16–24), lighting, and **Auto-frame** distance. The misleading **Surroundings** control has been withdrawn until genuine saved-world chunk tiling is available.
@@ -197,8 +197,8 @@ py -3 app.py --preview       # open previously generated scene
 
 ## Where files live
 
-- **Source checkout:** wherever you extracted/cloned this repository, preferably `%USERPROFILE%\CODING STUFF\minecraft-wallpaper`.
-- **User-owned state/output (Windows):** `%USERPROFILE%\COMPUTER STUFF\Minecraft Living World Wallpaper` containing `config.json`, generated `wallpaper/` files, and `scene-data.previous.js` for one-step rollback. These survive uninstall/deletion of the source checkout unless **you explicitly delete** them.
+- **Source checkout:** wherever you extracted/cloned this repository.
+- **User-owned state/output (Windows):** `%LOCALAPPDATA%\Minecraft Living World Wallpaper` (or `MWW_DATA_DIR` if set; installs from early builds keep their original folder) containing `config.json`, generated `wallpaper/` files, and `scene-data.previous.js` for one-step rollback. These survive uninstall/deletion of the source checkout unless **you explicitly delete** them.
 - **Original world + installed client version jar:** read-only, never copied into the repository or automatically shared.
 - **Optional Lively imported project:** only user-selected, verified MWW-owned `scene-data.js` is rewritten; it remains Lively-managed and should be removed through Lively, not guessed filesystem deletion.
 - **Caches/staging:** per-file temporary data inside the owned output/config folder, removed after success and normally failure; no hidden model downloads or external asset cache. Failure diagnostics are printed in the GUI/CLI rather than accumulated in a log.
